@@ -4,7 +4,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -22,6 +24,12 @@ public final class DocxSkeleton {
     static final String NS_CP = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
     static final String NS_DC = "http://purl.org/dc/elements/1.1/";
     static final String NS_EP = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties";
+
+    // 그림(w:drawing)에 쓰는 네임스페이스. 본문 루트에 선언해 둠
+    static final String NS_DRAWING =
+            " xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\""
+            + " xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\""
+            + " xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"";
 
     private static final String REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
     private static final String CT_WML = "application/vnd.openxmlformats-officedocument.wordprocessingml.";
@@ -78,15 +86,30 @@ public final class DocxSkeleton {
     }
 
     static String contentTypesXml() {
-        return XML_DECL + "<Types xmlns=\"" + NS_CT + "\">"
-                + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-                + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-                + override("/word/document.xml", CT_WML + "document.main+xml")
-                + override("/word/styles.xml", CT_WML + "styles+xml")
-                + override("/word/settings.xml", CT_WML + "settings+xml")
-                + override("/docProps/core.xml", "application/vnd.openxmlformats-package.core-properties+xml")
-                + override("/docProps/app.xml", "application/vnd.openxmlformats-officedocument.extended-properties+xml")
-                + "</Types>";
+        return contentTypesXml(Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap());
+    }
+
+    /**
+     * @param defaults  더할 확장자 → 콘텐츠 형식 (그림 파일 등)
+     * @param overrides 더할 파트 경로("/word/header1.xml") → 콘텐츠 형식
+     */
+    public static String contentTypesXml(Map<String, String> defaults, Map<String, String> overrides) {
+        StringBuilder b = new StringBuilder(XML_DECL).append("<Types xmlns=\"").append(NS_CT).append("\">")
+                .append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>")
+                .append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+        for (Map.Entry<String, String> e : defaults.entrySet()) {
+            b.append("<Default Extension=\"").append(e.getKey()).append("\" ContentType=\"").append(e.getValue())
+                    .append("\"/>");
+        }
+        b.append(override("/word/document.xml", CT_WML + "document.main+xml"))
+                .append(override("/word/styles.xml", CT_WML + "styles+xml"))
+                .append(override("/word/settings.xml", CT_WML + "settings+xml"))
+                .append(override("/docProps/core.xml", "application/vnd.openxmlformats-package.core-properties+xml"))
+                .append(override("/docProps/app.xml", "application/vnd.openxmlformats-officedocument.extended-properties+xml"));
+        for (Map.Entry<String, String> e : overrides.entrySet()) {
+            b.append(override(e.getKey(), e.getValue()));
+        }
+        return b.append("</Types>").toString();
     }
 
     private static String override(String part, String type) {
@@ -103,11 +126,21 @@ public final class DocxSkeleton {
     }
 
     static String documentRels() {
-        // Target은 이 rels 파일이 속한 word/ 기준 상대 경로
-        return XML_DECL + "<Relationships xmlns=\"" + NS_PKG_REL + "\">"
-                + rel("rId1", REL_TYPE + "styles", "styles.xml")
-                + rel("rId2", REL_TYPE + "settings", "settings.xml")
-                + "</Relationships>";
+        return documentRels(Collections.<String[]>emptyList());
+    }
+
+    /** 골격이 쓰는 관계 ID 다음 번호. 더하는 관계는 rId3부터. */
+    public static final int FIRST_FREE_REL = 3;
+
+    /** @param extra {Id, 관계 이름(image·header 등), Target} 목록. Target은 word/ 기준 상대 경로 */
+    public static String documentRels(List<String[]> extra) {
+        StringBuilder b = new StringBuilder(XML_DECL).append("<Relationships xmlns=\"").append(NS_PKG_REL).append("\">")
+                .append(rel("rId1", REL_TYPE + "styles", "styles.xml"))
+                .append(rel("rId2", REL_TYPE + "settings", "settings.xml"));
+        for (String[] r : extra) {
+            b.append(rel(r[0], REL_TYPE + r[1], r[2]));
+        }
+        return b.append("</Relationships>").toString();
     }
 
     private static String rel(String id, String type, String target) {
@@ -121,7 +154,7 @@ public final class DocxSkeleton {
     /** {@code body}(w:p·w:tbl 나열) 뒤에 기본 구역 설정을 붙인 document.xml. */
     public static String documentXml(String body) {
         // A4 세로(twip = 1/20 pt). 여백은 한국어판 Word 새 문서 기본값
-        return XML_DECL + "<w:document xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\">"
+        return XML_DECL + "<w:document xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\"" + NS_DRAWING + ">"
                 + "<w:body>"
                 + body
                 + "<w:sectPr>"

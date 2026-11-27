@@ -12,7 +12,6 @@ import org.w3c.dom.Node;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,14 +21,15 @@ import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.child;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.children;
 
-/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양)과 표를 옮긴다. 변환 한 번마다 새로 만든다. */
+/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양), 표, 그림을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class HwpxToDocx implements Converter {
 
     @Override
     public void convert(InputStream in, OutputStream out, ConvertOptions options, ConvertStats stats)
             throws IOException {
         HwpxPackage pkg = HwpxPackage.read(in);
-        Run run = new Run(new HwpxHeader(pkg.parse("Contents/header.xml")), stats);
+        DocxParts parts = new DocxParts();
+        Run run = new Run(pkg, new HwpxHeader(pkg.parse("Contents/header.xml")), parts, stats);
         StringBuilder body = new StringBuilder();
         for (String section : pkg.sections()) {
             Element root = pkg.parse(section).getDocumentElement();
@@ -40,21 +40,24 @@ public final class HwpxToDocx implements Converter {
         if (body.length() == 0) {
             body.append("<w:p/>");
         }
-        Map<String, byte[]> entries = DocxSkeleton.entries();
-        entries.put("word/document.xml", DocxSkeleton.documentXml(body.toString()).getBytes(StandardCharsets.UTF_8));
-        DocxSkeleton.write(entries, out);
+        DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString())), out);
     }
 
     /** 변환 한 번 동안의 상태. 같은 모양 ID의 속성 XML은 한 번만 만든다. */
     private static final class Run {
 
+        private final HwpxPackage pkg;
         private final HwpxHeader header;
+        private final DocxParts parts;
         private final ConvertStats stats;
         private final Map<String, String> runProps = new HashMap<String, String>();
         private final Map<String, String> paraProps = new HashMap<String, String>();
+        private int drawingId = 1;
 
-        Run(HwpxHeader header, ConvertStats stats) {
+        Run(HwpxPackage pkg, HwpxHeader header, DocxParts parts, ConvertStats stats) {
+            this.pkg = pkg;
             this.header = header;
+            this.parts = parts;
             this.stats = stats;
         }
 
@@ -145,6 +148,8 @@ public final class HwpxToDocx implements Converter {
                         pieces.flush(false);
                     }
                     table(e, pieces.jc, pieces.out);
+                } else if (isHp(e, "pic")) {
+                    picture(e, rPr, pieces.cur);
                 } else if (isHp(e, "secPr")) {
                     // 구역 설정은 쪽 설정 변환에서 다룸
                     continue;
@@ -434,6 +439,110 @@ public final class HwpxToDocx implements Converter {
                 }
             }
             return w;
+        }
+
+        // ---------- 그림 ----------
+
+        private static final long EMU_PER_HWPUNIT = 127; // 914400 EMU/인치 ÷ 7200 HWPUNIT/인치
+
+        private void picture(Element pic, String rPr, StringBuilder out) throws IOException {
+            Element img = child(pic, HwpxHeader.NS_HC, "img");
+            String ref = img == null ? "" : img.getAttribute("binaryItemIDRef");
+            String[] item = pkg.item(ref);
+            byte[] data = item == null ? null : pkg.get(item[0]);
+            if (data == null) {
+                stats.warn("그림 파일을 찾지 못해 뺌: " + ref);
+                skip(pic);
+                return;
+            }
+            String href = item[0];
+            String ext = href.lastIndexOf('.') < 0 ? "" : href.substring(href.lastIndexOf('.') + 1);
+            if (!DocxParts.isImageExtension(ext)) {
+                stats.warn("Word가 읽지 못하는 그림 형식이라 뺌: " + href);
+                skip(pic);
+                return;
+            }
+            Element sz = child(pic, NS_HP, "sz");
+            Element cur = child(pic, NS_HP, "curSz");
+            long cx = EMU_PER_HWPUNIT * Math.max(1, positive(HwpxHeader.intAttr(sz, "width", 0), HwpxHeader.intAttr(cur, "width", 0)));
+            long cy = EMU_PER_HWPUNIT * Math.max(1, positive(HwpxHeader.intAttr(sz, "height", 0), HwpxHeader.intAttr(cur, "height", 0)));
+            String rid = parts.image(href, data, ext);
+            stats.picture();
+            int id = drawingId++;
+
+            Element pos = child(pic, NS_HP, "pos");
+            Element om = child(pic, NS_HP, "outMargin");
+            String dist = " distT=\"" + emu(om, "top") + "\" distB=\"" + emu(om, "bottom") + "\" distL=\"" + emu(om, "left")
+                    + "\" distR=\"" + emu(om, "right") + "\"";
+            String graphic = "<wp:docPr id=\"" + id + "\" name=\"그림 " + id + "\"/>"
+                    + "<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>"
+                    + "<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
+                    + "<pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"" + Xml.attr(href) + "\"/><pic:cNvPicPr/></pic:nvPicPr>"
+                    + "<pic:blipFill><a:blip r:embed=\"" + rid + "\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
+                    + "<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/></a:xfrm>"
+                    + "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>"
+                    + "</a:graphicData></a:graphic>";
+            out.append("<w:r>").append(rPr).append("<w:drawing>");
+            if (pos == null || "1".equals(pos.getAttribute("treatAsChar"))) {
+                out.append("<wp:inline").append(dist).append("><wp:extent cx=\"").append(cx).append("\" cy=\"").append(cy)
+                        .append("\"/>").append(graphic).append("</wp:inline>");
+            } else {
+                String wrap = pic.getAttribute("textWrap");
+                boolean behind = "BEHIND_TEXT".equals(wrap);
+                out.append("<wp:anchor").append(dist).append(" simplePos=\"0\" relativeHeight=\"").append(id)
+                        .append("\" behindDoc=\"").append(behind ? 1 : 0).append("\" locked=\"0\" layoutInCell=\"1\"")
+                        .append(" allowOverlap=\"").append("1".equals(pos.getAttribute("allowOverlap")) ? 1 : 0).append("\">")
+                        .append("<wp:simplePos x=\"0\" y=\"0\"/>")
+                        .append(position("positionH", horzFrom(pos.getAttribute("horzRelTo")), pos.getAttribute("horzAlign"),
+                                HwpxHeader.intAttr(pos, "horzOffset", 0)))
+                        .append(position("positionV", vertFrom(pos.getAttribute("vertRelTo")), pos.getAttribute("vertAlign"),
+                                HwpxHeader.intAttr(pos, "vertOffset", 0)))
+                        .append("<wp:extent cx=\"").append(cx).append("\" cy=\"").append(cy).append("\"/>")
+                        .append("<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>")
+                        .append(wrap(wrap))
+                        .append(graphic).append("</wp:anchor>");
+            }
+            out.append("</w:drawing></w:r>");
+        }
+
+        private static int positive(int a, int b) {
+            return a > 0 ? a : b;
+        }
+
+        private static long emu(Element margin, String side) {
+            return Math.max(0, EMU_PER_HWPUNIT * HwpxHeader.intAttr(margin, side, 0));
+        }
+
+        // 한컴 PAPER는 용지 끝, PAGE는 쪽 여백 안쪽 기준
+        private static String horzFrom(String v) {
+            return "PAPER".equals(v) ? "page" : "PAGE".equals(v) ? "margin" : "column";
+        }
+
+        private static String vertFrom(String v) {
+            return "PAPER".equals(v) ? "page" : "PAGE".equals(v) ? "margin" : "paragraph";
+        }
+
+        private static String position(String tag, String from, String align, int offset) {
+            String a = "CENTER".equals(align) ? "center"
+                    : "RIGHT".equals(align) ? "right"
+                    : "BOTTOM".equals(align) ? "bottom"
+                    : "INSIDE".equals(align) ? "inside"
+                    : "OUTSIDE".equals(align) ? "outside" : null;
+            String inner = a != null ? "<wp:align>" + a + "</wp:align>"
+                    : "<wp:posOffset>" + EMU_PER_HWPUNIT * offset + "</wp:posOffset>";
+            return "<wp:" + tag + " relativeFrom=\"" + from + "\">" + inner + "</wp:" + tag + ">";
+        }
+
+        private static String wrap(String textWrap) {
+            switch (textWrap) {
+                case "SQUARE":
+                    return "<wp:wrapSquare wrapText=\"bothSides\"/>";
+                case "BEHIND_TEXT":
+                case "IN_FRONT_OF_TEXT":
+                    return "<wp:wrapNone/>";
+                default:
+                    return "<wp:wrapTopAndBottom/>";
+            }
         }
 
         // ---------- 공통 ----------
