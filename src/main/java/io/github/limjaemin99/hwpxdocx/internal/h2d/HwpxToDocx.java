@@ -1127,6 +1127,22 @@ public final class HwpxToDocx implements Converter {
 
         private static final long EMU_PER_HWPUNIT = 127; // 914400 EMU/인치 ÷ 7200 HWPUNIT/인치
 
+        /**
+         * a:blip 여는 태그 뒤. 한글 '워터마크 효과'(밝기 70, 대비 -50)는 Word '희미하게'(a:lum 70000/-70000)로.
+         * 다른 밝기·대비는 대응값을 모르므로 원래 색 + 경고.
+         */
+        private String blipEffect(Element img) {
+            int bright = HwpxHeader.intAttr(img, "bright", 0);
+            int contrast = HwpxHeader.intAttr(img, "contrast", 0);
+            if (bright == 70 && contrast == -50) {
+                return "><a:lum bright=\"70000\" contrast=\"-70000\"/></a:blip>";
+            }
+            if (bright != 0 || contrast != 0) {
+                stats.warn("그림 밝기·대비는 한글 워터마크 효과 값만 옮김");
+            }
+            return "/>";
+        }
+
         private void picture(Element pic, String rPr, StringBuilder out) throws IOException {
 
             Element img = child(pic, HwpxHeader.NS_HC, "img");
@@ -1177,7 +1193,7 @@ public final class HwpxToDocx implements Converter {
                     + "<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>"
                     + "<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
                     + "<pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"" + Xml.attr(href) + "\"/><pic:cNvPicPr/></pic:nvPicPr>"
-                    + "<pic:blipFill><a:blip r:embed=\"" + rid + "\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
+                    + "<pic:blipFill><a:blip r:embed=\"" + rid + "\"" + blipEffect(img) + "<a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
                     + "<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/></a:xfrm>"
                     + "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>"
                     + "</a:graphicData></a:graphic>";

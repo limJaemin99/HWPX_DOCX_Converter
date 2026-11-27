@@ -106,8 +106,31 @@ class DocxVmlPictureTest {
         assertEquals("CENTER", pos.getAttribute("vertAlign"));
         assertEquals("42500", ((Element) pic.getElementsByTagNameNS(HP, "sz").item(0)).getAttribute("width"));
         assertEquals("36835", ((Element) pic.getElementsByTagNameNS(HP, "sz").item(0)).getAttribute("height"));
-        assertContains(result.getWarnings().toString(), "흐리게");
+        // Word '희미하게' → 한글 '워터마크 효과'가 저장하는 값
+        Element img = (Element) pic.getElementsByTagNameNS(HC, "img").item(0);
+        assertEquals("70", img.getAttribute("bright"));
+        assertEquals("-50", img.getAttribute("contrast"));
+        assertEquals("REAL_PIC", img.getAttribute("effect"));
+        assertEquals(0, result.getWarnings().size());
         assertEquals(0, result.getSkippedCount());
+    }
+
+    @Test
+    void otherBrightnessBecomesWatermarkWithWarning() throws Exception {
+        convert(new TestDocx().image("rId30", "media/image1.png", png())
+                .body(p("", r("", pict("width:72pt;height:36pt", " gain=\"2\" blacklevel=\"-6554f\"", ""))))
+                .toBytes());
+        Element img = first(HC, "img");
+        assertEquals("70", img.getAttribute("bright"));
+        assertContains(result.getWarnings().toString(), "워터마크 효과로 바꿈");
+    }
+
+    @Test
+    void pictureWithoutEffectKeepsColors() throws Exception {
+        convert(new TestDocx().image("rId30", "media/image1.png", png())
+                .body(p("", r("", pict("width:72pt;height:36pt", "", "")))).toBytes());
+        assertEquals("0", first(HC, "img").getAttribute("bright"));
+        assertEquals("0", first(HC, "img").getAttribute("contrast"));
     }
 
     @Test
