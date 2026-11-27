@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.d2h;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -199,7 +200,7 @@ class DocxSectionTest {
         ByteArrayOutputStream h = new ByteArrayOutputStream();
         HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(portraitThenLandscape()), h, null);
         ByteArrayOutputStream back = new ByteArrayOutputStream();
-        ConvertResult r = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(h.toByteArray()), back, null);
+        ConvertResult r = TestConvert.hwpxToDocx(new ByteArrayInputStream(h.toByteArray()), back, null);
         assertEquals(0, r.getSkippedCount());
         Map<String, byte[]> m = ZipReader.unzip(new ByteArrayInputStream(back.toByteArray()));
         Document doc = SafeXml.parse(new ByteArrayInputStream(m.get("word/document.xml")), "document");

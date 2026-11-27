@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.d2h;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertException;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
@@ -351,7 +352,7 @@ class DocxToHwpxTest {
         ByteArrayOutputStream hwpx = new ByteArrayOutputStream();
         HwpxSkeleton.write(h, hwpx);
         ByteArrayOutputStream docx = new ByteArrayOutputStream();
-        HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx.toByteArray()), docx, null);
+        TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx.toByteArray()), docx, null);
         convert(docx.toByteArray());
         List<String> texts = new ArrayList<String>();
         for (Element p : paras()) {

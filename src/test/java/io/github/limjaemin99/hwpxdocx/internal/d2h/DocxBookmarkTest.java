@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.d2h;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -94,7 +95,7 @@ class DocxBookmarkTest {
     void hwpxToDocxToHwpxKeepsBookmark() throws Exception {
         convert(new TestDocx().body(p("", start("0", "총강"), r("", t("대한민국은 민주공화국이다.")), end("0"))));
         ByteArrayOutputStream docx = new ByteArrayOutputStream();
-        HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpxBytes), docx, null);
+        TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpxBytes), docx, null);
         Map<String, byte[]> m = ZipReader.unzip(new ByteArrayInputStream(docx.toByteArray()));
         String doc = new String(m.get("word/document.xml"), StandardCharsets.UTF_8);
         assertContains(doc, "w:name=\"총강\"");

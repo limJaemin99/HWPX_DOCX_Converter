@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.h2d;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -35,7 +36,7 @@ class HwpxTableTest {
 
     private Element body(byte[] hwpx) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        result = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx), out, null);
+        result = TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx), out, null);
         try (ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()))) {
             ZipEntry e;
             while ((e = z.getNextEntry()) != null) {

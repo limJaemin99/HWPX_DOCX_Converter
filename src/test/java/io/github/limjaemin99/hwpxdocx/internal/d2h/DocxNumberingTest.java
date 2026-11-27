@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.d2h;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -226,7 +227,7 @@ class DocxNumberingTest {
     public void roundTrip() throws Exception {
         convert(doc());
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpxBytes), out, null);
+        TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpxBytes), out, null);
         Map<String, byte[]> docx = ZipReader.unzip(new ByteArrayInputStream(out.toByteArray()));
         String n = new String(docx.get("word/numbering.xml"), StandardCharsets.UTF_8);
         assertContains(n, "<w:numFmt w:val=\"ganada\"/>");

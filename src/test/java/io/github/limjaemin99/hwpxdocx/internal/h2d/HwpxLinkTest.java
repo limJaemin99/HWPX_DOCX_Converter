@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.h2d;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -31,7 +32,7 @@ class HwpxLinkTest {
 
     private void convert(TestHwpx h) throws Exception {
         ByteArrayOutputStream o = new ByteArrayOutputStream();
-        result = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(h.toBytes()), o, null);
+        result = TestConvert.hwpxToDocx(new ByteArrayInputStream(h.toBytes()), o, null);
         out = ZipReader.unzip(new ByteArrayInputStream(o.toByteArray()));
         for (Map.Entry<String, byte[]> e : out.entrySet()) {
             if (e.getKey().endsWith(".xml") || e.getKey().endsWith(".rels")) {

@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.d2h;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -166,7 +167,7 @@ class DocxPageTest {
         ByteArrayOutputStream hwpx = new ByteArrayOutputStream();
         HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(docx), hwpx, null);
         ByteArrayOutputStream back = new ByteArrayOutputStream();
-        ConvertResult r = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx.toByteArray()), back, null);
+        ConvertResult r = TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx.toByteArray()), back, null);
         assertEquals(0, r.getSkippedCount());
         Map<String, byte[]> m = ZipReader.unzip(new ByteArrayInputStream(back.toByteArray()));
         assertContains(new String(m.get("word/header1.xml"), "UTF-8"), "대한민국헌법");

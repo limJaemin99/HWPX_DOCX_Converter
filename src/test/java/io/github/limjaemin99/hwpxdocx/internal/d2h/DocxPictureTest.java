@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.d2h;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
@@ -135,7 +136,7 @@ class DocxPictureTest {
         ByteArrayOutputStream hwpx = new ByteArrayOutputStream();
         io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxSkeleton.write(out, hwpx);
         ByteArrayOutputStream docx = new ByteArrayOutputStream();
-        ConvertResult back = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx.toByteArray()), docx, null);
+        ConvertResult back = TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx.toByteArray()), docx, null);
         assertEquals(1, back.getPictureCount());
         Map<String, byte[]> d = ZipReader.unzip(new ByteArrayInputStream(docx.toByteArray()));
         assertTrue(Arrays.equals(data, d.get("word/media/image1.png")));

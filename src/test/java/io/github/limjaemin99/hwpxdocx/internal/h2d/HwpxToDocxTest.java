@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.h2d;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.internal.Xml;
 import io.github.limjaemin99.hwpxdocx.ConvertException;
 import io.github.limjaemin99.hwpxdocx.ConvertOptions;
@@ -51,7 +52,7 @@ class HwpxToDocxTest {
 
     private Document convert(byte[] hwpx, ConvertOptions opt) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        result = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx), out, opt);
+        result = TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx), out, opt);
         try (ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()))) {
             ZipEntry e;
             while ((e = z.getNextEntry()) != null) {
@@ -299,7 +300,7 @@ class HwpxToDocxTest {
     @Test
     void outputPartsAreValidXml() throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(new TestHwpx().paragraphs(
+        TestConvert.hwpxToDocx(new ByteArrayInputStream(new TestHwpx().paragraphs(
                 para("0", run("0", t("제10조 모든 국민은 인간으로서의 존엄과 가치를 가진다.")))).toBytes()), out, null);
         int parts = 0;
         try (ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()))) {
