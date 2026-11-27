@@ -60,6 +60,37 @@ final class TestDocx {
         return "<w:t xml:space=\"preserve\">" + s + "</w:t>";
     }
 
+    /** word/media에 그림을 넣고 본문 관계에 이음. */
+    TestDocx image(String rid, String target, byte[] data) {
+        rels.add(new String[]{rid, "image", target});
+        entries.put("word/" + target, data);
+        return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
+    }
+
+    private static final String PIC = "<a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">"
+            + "<a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
+            + "<pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:nvPicPr>"
+            + "<pic:cNvPr id=\"0\" name=\"x\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill>"
+            + "<a:blip r:embed=\"%s\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
+            + "<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"%d\" cy=\"%d\"/></a:xfrm>"
+            + "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>";
+
+    static String inline(String rid, long cx, long cy) {
+        return "<w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"" + cx + "\" cy=\"" + cy
+                + "\"/><wp:docPr id=\"1\" name=\"그림 1\"/>" + String.format(PIC, rid, cx, cy) + "</wp:inline></w:drawing>";
+    }
+
+    /** 여백 기준 가로 가운데, 문단 기준 아래로 127000 EMU(= 1000 HWPUNIT), 어울림 배치. */
+    static String anchor(String rid, long cx, long cy) {
+        return "<w:drawing><wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"1\""
+                + " behindDoc=\"0\" locked=\"0\" layoutInCell=\"1\" allowOverlap=\"1\"><wp:simplePos x=\"0\" y=\"0\"/>"
+                + "<wp:positionH relativeFrom=\"margin\"><wp:align>center</wp:align></wp:positionH>"
+                + "<wp:positionV relativeFrom=\"paragraph\"><wp:posOffset>127000</wp:posOffset></wp:positionV>"
+                + "<wp:extent cx=\"" + cx + "\" cy=\"" + cy + "\"/><wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>"
+                + "<wp:wrapSquare wrapText=\"bothSides\"/><wp:docPr id=\"2\" name=\"그림 2\"/>"
+                + String.format(PIC, rid, cx, cy) + "</wp:anchor></w:drawing>";
+    }
+
     byte[] toBytes() throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         DocxSkeleton.write(entries, out);

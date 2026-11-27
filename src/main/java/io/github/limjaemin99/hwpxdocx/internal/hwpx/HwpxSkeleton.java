@@ -4,7 +4,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
@@ -56,9 +58,20 @@ public final class HwpxSkeleton {
 
     /** 머리 정보·구역 하나를 바꿔 넣은 패키지 항목. */
     public static Map<String, byte[]> entries(String headerXml, String sectionXml) {
+        return entries(headerXml, sectionXml, Collections.<String[]>emptyList(), Collections.<String, byte[]>emptyMap());
+    }
+
+    /**
+     * @param binItems content.hpf에 등록할 {id, href, media-type}
+     * @param binData  href → 파일 내용 (BinData/…)
+     */
+    public static Map<String, byte[]> entries(String headerXml, String sectionXml, List<String[]> binItems,
+                                              Map<String, byte[]> binData) {
         Map<String, byte[]> m = entries();
+        m.put("Contents/content.hpf", utf8(contentHpf(binItems)));
         m.put("Contents/header.xml", utf8(headerXml));
         m.put("Contents/section0.xml", utf8(sectionXml));
+        m.putAll(binData);
         return m;
     }
 
@@ -121,6 +134,20 @@ public final class HwpxSkeleton {
     }
 
     static String contentHpf() {
+        return contentHpf(Collections.<String[]>emptyList());
+    }
+
+    /** @param binItems 그림 등 BinData 항목 {id, href, media-type} */
+    public static String contentHpf(List<String[]> binItems) {
+        StringBuilder items = new StringBuilder();
+        for (String[] it : binItems) {
+            items.append("<opf:item id=\"").append(it[0]).append("\" href=\"").append(it[1])
+                    .append("\" media-type=\"").append(it[2]).append("\" isEmbeded=\"1\"/>");
+        }
+        return contentHpfWith(items.toString());
+    }
+
+    private static String contentHpfWith(String binItems) {
         return XML_DECL + "<opf:package" + NS_ALL + " version=\"\" unique-identifier=\"\" id=\"\">"
                 + "<opf:metadata><opf:title/><opf:language>ko</opf:language>"
                 + "<opf:meta name=\"creator\" content=\"text\"/>"
@@ -131,6 +158,7 @@ public final class HwpxSkeleton {
                 + "</opf:metadata>"
                 + "<opf:manifest>"
                 + "<opf:item id=\"header\" href=\"Contents/header.xml\" media-type=\"application/xml\"/>"
+                + binItems
                 + "<opf:item id=\"section0\" href=\"Contents/section0.xml\" media-type=\"application/xml\"/>"
                 + "<opf:item id=\"settings\" href=\"settings.xml\" media-type=\"application/xml\"/>"
                 + "</opf:manifest>"
