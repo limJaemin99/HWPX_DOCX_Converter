@@ -23,7 +23,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.child;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.children;
 
-/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양), 표, 그림, 쪽 설정, 머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
+/** HWPX → DOCX. 본문 문단(글자·문단 모양), 표, 그림, 구역별 쪽 설정·머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class HwpxToDocx implements Converter {
 
     @Override
@@ -33,19 +33,43 @@ public final class HwpxToDocx implements Converter {
         DocxParts parts = new DocxParts();
         Run run = new Run(pkg, new HwpxHeader(pkg.parse("Contents/header.xml")), parts, stats);
         StringBuilder body = new StringBuilder();
-        for (String section : pkg.sections()) {
-            Element root = pkg.parse(section).getDocumentElement();
+        List<String> sections = pkg.sections();
+        String sectPr = null;
+        for (int i = 0; i < sections.size(); i++) {
+            run.beginSection();
+            StringBuilder sec = new StringBuilder();
+            Element root = pkg.parse(sections.get(i)).getDocumentElement();
             for (Element p : children(root, NS_HP, "p")) {
-                run.paragraph(p, body);
+                run.paragraph(p, sec);
+                run.atSectionStart = false;
             }
+            if (run.secPrCount > 1) {
+                stats.warn("구역 XML 하나에 구역 설정이 둘 이상이면 처음 것만 씀");
+            }
+            sectPr = run.sectPr();
+            if (i < sections.size() - 1) {
+                endSection(sec, sectPr);
+            }
+            body.append(sec);
         }
         if (body.length() == 0) {
             body.append("<w:p/>");
         }
-        if (pkg.sections().size() > 1 || run.secPrCount > 1) {
-            stats.warn("구역이 여러 개인 문서는 첫 구역의 쪽 설정·머리말을 씀");
+        DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), sectPr)), out);
+    }
+
+    /**
+     * Word는 마지막이 아닌 구역의 설정을 그 구역 마지막 문단의 w:pPr 끝에 둔다.
+     * 문단 변환은 표 뒤에도 늘 문단을 남기므로 구역의 마지막 요소는 문단이다.
+     */
+    static void endSection(StringBuilder sec, String sectPr) {
+        int p = sec.lastIndexOf("<w:p><w:pPr>");
+        int close = p < 0 ? -1 : sec.indexOf("</w:pPr>", p);
+        if (close < 0) {
+            sec.append("<w:p><w:pPr>").append(sectPr).append("</w:pPr></w:p>");
+        } else {
+            sec.insert(close, sectPr);
         }
-        DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), run.sectPr())), out);
     }
 
     /** 변환 한 번 동안의 상태. 같은 모양 ID의 속성 XML은 한 번만 만든다. */
@@ -68,6 +92,23 @@ public final class HwpxToDocx implements Converter {
         private final Map<String, String> footers = new LinkedHashMap<String, String>();
         private boolean oddOnlyHeader;
         private boolean oddOnlyFooter;
+        // 구역 첫 문단을 읽는 중인지 (쪽 번호 새로 시작을 구역 설정으로 옮길 수 있는 자리)
+        boolean atSectionStart;
+        private int newPageNumber;
+
+        /** 구역마다 쪽 설정·머리말을 새로 모은다. 머리말을 정하지 않은 구역은 Word에서 앞 구역 것을 이어 씀. */
+        void beginSection() {
+            secPr = null;
+            colPr = null;
+            secPrCount = 0;
+            pageNum = null;
+            headers.clear();
+            footers.clear();
+            oddOnlyHeader = false;
+            oddOnlyFooter = false;
+            atSectionStart = true;
+            newPageNumber = 0;
+        }
         private int headerFooterDepth;
 
         Run(HwpxPackage pkg, HwpxHeader header, DocxParts parts, ConvertStats stats) {
@@ -192,6 +233,10 @@ public final class HwpxToDocx implements Converter {
                 if (pageNum == null) {
                     pageNum = c;
                 }
+            } else if (isHp(c, "newNum") && "PAGE".equals(c.getAttribute("numType")) && atSectionStart
+                    && headerFooterDepth == 0) {
+                // 구역 첫 문단의 쪽 번호 새로 시작 = 구역 시작 번호. 구역 중간 것은 Word에 대응이 없음
+                newPageNumber = HwpxHeader.intAttr(c, "num", 0);
             } else if (isHp(c, "autoNum") && "PAGE".equals(c.getAttribute("numType"))) {
                 out.append(field("PAGE", rPr));
             } else if (isHp(c, "autoNum") && "TOTAL_PAGE".equals(c.getAttribute("numType"))) {
@@ -291,7 +336,7 @@ public final class HwpxToDocx implements Converter {
             if (titlePg && ftr.containsKey("default")) {
                 b.append(reference("footer", "first", parts.headerFooter("ftr", firstFtr == null ? "" : firstFtr)));
             }
-            b.append(DocxProps.pageSetup(secPr, colPr));
+            b.append(DocxProps.pageSetup(secPr, colPr, newPageNumber));
             if (titlePg) {
                 b.append("<w:titlePg/>");
             }
