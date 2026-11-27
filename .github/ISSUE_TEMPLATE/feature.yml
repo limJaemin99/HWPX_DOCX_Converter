@@ -1,0 +1,32 @@
+name: 기능
+description: 새 기능이나 변환 항목 추가
+labels: [feature]
+body:
+  - type: dropdown
+    id: direction
+    attributes:
+      label: 방향
+      options:
+        - HWPX → DOCX
+        - DOCX → HWPX
+        - 양쪽
+        - 해당 없음
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 할 일
+      description: 무엇이 되게 할지
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건
+      description: 쓸 시험 문서와 기대 결과 (가능하면 숫자로)
+  - type: textarea
+    id: basis
+    attributes:
+      label: 근거
+      description: OWPML(KS X 6101)·ECMA-376의 해당 부분, 또는 한글·Word에서 직접 확인한 결과

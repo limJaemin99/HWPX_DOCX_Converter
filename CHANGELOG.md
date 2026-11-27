@@ -9,3 +9,4 @@
 - 공개 API 뼈대: `HwpxDocxConverter`, `ConvertOptions`, `ConvertResult`, `ConvertException`
 - 명령줄 도구 뼈대 (`java -jar hwpx-docx-converter-<버전>.jar 입력 출력`)
 - GitHub Actions: CI(JDK 17 빌드, JDK 8·17·21 시험), main 합칠 때 자동 릴리스(jar + SHA-256), CodeQL, Dependabot
+- 이슈 양식(기능, 버그)과 PR 양식, README 개발 방식
