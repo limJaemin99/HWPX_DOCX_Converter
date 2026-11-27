@@ -279,6 +279,53 @@ final class DocxProps {
         return b.toString();
     }
 
+    /**
+     * 구역 설정 → w:sectPr 안의 pgSz·pgMar·pgNumType·cols (스키마 순서대로).
+     * 한컴 위·아래 여백은 용지 끝에서 머리말·꼬리말까지, 본문은 그 안쪽에서 시작한다.
+     * Word는 본문까지의 거리와 머리말 위치를 따로 적어서 더해 줌.
+     */
+    static String pageSetup(Element secPr, Element colPr) {
+        Element page = child(secPr, NS_HP, "pagePr");
+        Element m = child(page, NS_HP, "margin");
+        // 값이 없으면 한컴 새 문서 기본값 (A4, 위 20 mm, 아래·머리말·꼬리말 15 mm, 좌우 30 mm)
+        int w = intAttr(page, "width", 59528);
+        int h = intAttr(page, "height", 84186);
+        boolean landscape = page != null && "NARROWLY".equals(page.getAttribute("landscape"));
+        if (landscape && w < h) {
+            int t = w;
+            w = h;
+            h = t;
+        }
+        int top = intAttr(m, "top", 5668);
+        int bottom = intAttr(m, "bottom", 4252);
+        int header = intAttr(m, "header", 4252);
+        int footer = intAttr(m, "footer", 4252);
+        StringBuilder b = new StringBuilder();
+        b.append("<w:pgSz w:w=\"").append(twip(w)).append("\" w:h=\"").append(twip(h)).append('"');
+        if (landscape) {
+            b.append(" w:orient=\"landscape\"");
+        }
+        b.append("/><w:pgMar w:top=\"").append(twip(top + header))
+                .append("\" w:right=\"").append(twip(intAttr(m, "right", 8504)))
+                .append("\" w:bottom=\"").append(twip(bottom + footer))
+                .append("\" w:left=\"").append(twip(intAttr(m, "left", 8504)))
+                .append("\" w:header=\"").append(twip(top))
+                .append("\" w:footer=\"").append(twip(bottom))
+                .append("\" w:gutter=\"").append(twip(intAttr(m, "gutter", 0))).append("\"/>");
+        int start = intAttr(child(secPr, NS_HP, "startNum"), "page", 0);
+        if (start > 0) {
+            b.append("<w:pgNumType w:start=\"").append(start).append("\"/>");
+        }
+        int cols = intAttr(colPr, "colCount", 1);
+        int gap = intAttr(colPr, "sameGap", 0);
+        if (cols > 1) {
+            b.append("<w:cols w:num=\"").append(cols).append("\" w:space=\"").append(twip(gap)).append("\"/>");
+        } else {
+            b.append("<w:cols w:space=\"").append(twip(gap)).append("\"/>");
+        }
+        return b.toString();
+    }
+
     private static final String[][] SIDES = {
             {"top", "topBorder"}, {"left", "leftBorder"}, {"bottom", "bottomBorder"}, {"right", "rightBorder"}};
 

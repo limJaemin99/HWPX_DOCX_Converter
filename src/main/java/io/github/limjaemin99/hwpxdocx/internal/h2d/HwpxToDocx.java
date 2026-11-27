@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,7 +22,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.child;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.children;
 
-/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양), 표, 그림을 옮긴다. 변환 한 번마다 새로 만든다. */
+/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양), 표, 그림, 쪽 설정, 머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class HwpxToDocx implements Converter {
 
     @Override
@@ -40,7 +41,10 @@ public final class HwpxToDocx implements Converter {
         if (body.length() == 0) {
             body.append("<w:p/>");
         }
-        DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString())), out);
+        if (pkg.sections().size() > 1 || run.secPrCount > 1) {
+            stats.warn("구역이 여러 개인 문서는 첫 구역의 쪽 설정·머리말을 씀");
+        }
+        DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), run.sectPr())), out);
     }
 
     /** 변환 한 번 동안의 상태. 같은 모양 ID의 속성 XML은 한 번만 만든다. */
@@ -53,6 +57,17 @@ public final class HwpxToDocx implements Converter {
         private final Map<String, String> runProps = new HashMap<String, String>();
         private final Map<String, String> paraProps = new HashMap<String, String>();
         private int drawingId = 1;
+
+        // 쪽 설정·머리말·꼬리말: 지금은 문서 전체에 첫 구역 것을 씀
+        private Element secPr;
+        private Element colPr;
+        int secPrCount;
+        private Element pageNum;
+        private final Map<String, String> headers = new LinkedHashMap<String, String>();
+        private final Map<String, String> footers = new LinkedHashMap<String, String>();
+        private boolean oddOnlyHeader;
+        private boolean oddOnlyFooter;
+        private int headerFooterDepth;
 
         Run(HwpxPackage pkg, HwpxHeader header, DocxParts parts, ConvertStats stats) {
             this.pkg = pkg;
@@ -151,18 +166,183 @@ public final class HwpxToDocx implements Converter {
                 } else if (isHp(e, "pic")) {
                     picture(e, rPr, pieces.cur);
                 } else if (isHp(e, "secPr")) {
-                    // 구역 설정은 쪽 설정 변환에서 다룸
-                    continue;
+                    secPrCount++;
+                    if (secPr == null) {
+                        secPr = e;
+                    }
                 } else if (isHp(e, "ctrl")) {
                     for (Element c : childElements(e)) {
-                        if (!isHp(c, "colPr")) {
-                            skip(c);
-                        }
+                        control(c, rPr, pieces.cur);
                     }
                 } else {
                     skip(e);
                 }
             }
+        }
+
+        private void control(Element c, String rPr, StringBuilder out) throws IOException {
+            if (isHp(c, "colPr")) {
+                if (colPr == null) {
+                    colPr = c;
+                }
+            } else if (isHp(c, "header") || isHp(c, "footer")) {
+                headerFooter(c);
+            } else if (isHp(c, "pageNum")) {
+                if (pageNum == null) {
+                    pageNum = c;
+                }
+            } else if (isHp(c, "autoNum") && "PAGE".equals(c.getAttribute("numType"))) {
+                out.append(field("PAGE", rPr));
+            } else if (isHp(c, "autoNum") && "TOTAL_PAGE".equals(c.getAttribute("numType"))) {
+                out.append(field("NUMPAGES", rPr));
+            } else {
+                skip(c);
+            }
+        }
+
+        private static String field(String instr, String rPr) {
+            return "<w:fldSimple w:instr=\" " + instr + " \"><w:r>" + rPr + "<w:t>1</w:t></w:r></w:fldSimple>";
+        }
+
+        /** 한컴은 머리말을 쪽마다 바꿀 수 있지만 Word 구역에는 종류별로 하나라서 처음 것만 씀. */
+        private void headerFooter(Element c) throws IOException {
+            boolean header = isHp(c, "header");
+            String type = c.getAttribute("applyPageType");
+            String kind = "EVEN".equals(type) ? "even" : "default";
+            Map<String, String> target = header ? headers : footers;
+            if (target.containsKey(kind)) {
+                stats.warn("중간에 바뀌는 머리말·꼬리말은 처음 것만 옮김");
+                return;
+            }
+            if ("ODD".equals(type)) {
+                if (header) {
+                    oddOnlyHeader = true;
+                } else {
+                    oddOnlyFooter = true;
+                }
+            }
+            StringBuilder b = new StringBuilder();
+            Element sub = child(c, NS_HP, "subList");
+            headerFooterDepth++;
+            try {
+                if (sub != null) {
+                    for (Element p : children(sub, NS_HP, "p")) {
+                        paragraph(p, b);
+                    }
+                }
+            } finally {
+                headerFooterDepth--;
+            }
+            target.put(kind, b.toString());
+        }
+
+        /** 마지막 w:sectPr. 머리말·꼬리말 파트도 여기서 만든다. */
+        String sectPr() {
+            Element vis = child(secPr, NS_HP, "visibility");
+            boolean hideFirstHeader = "1".equals(vis == null ? "" : vis.getAttribute("hideFirstHeader"));
+            boolean hideFirstFooter = "1".equals(vis == null ? "" : vis.getAttribute("hideFirstFooter"));
+            boolean hideFirstPageNum = "1".equals(vis == null ? "" : vis.getAttribute("hideFirstPageNum"));
+
+            Map<String, String> hdr = new LinkedHashMap<String, String>(headers);
+            Map<String, String> ftr = new LinkedHashMap<String, String>(footers);
+            String firstHdr = hideFirstHeader ? "" : hdr.get("default");
+            String firstFtr = hideFirstFooter ? "" : ftr.get("default");
+            String num = pageNumParagraph();
+            if (num != null) {
+                Map<String, String> target = pageNum.getAttribute("pos").startsWith("TOP") ? hdr : ftr;
+                String old = target.get("default");
+                target.put("default", (old == null ? "" : old) + num);
+                if (target.containsKey("even")) {
+                    target.put("even", target.get("even") + num);
+                }
+                if (!hideFirstPageNum) {
+                    if (target == hdr && !hideFirstHeader) {
+                        firstHdr = target.get("default");
+                    } else if (target == ftr && !hideFirstFooter) {
+                        firstFtr = target.get("default");
+                    }
+                }
+            }
+            boolean titlePg = hideFirstHeader && hdr.containsKey("default")
+                    || hideFirstFooter && ftr.containsKey("default")
+                    || hideFirstPageNum && num != null;
+            // 홀수 쪽에만 있는 머리말은 짝수 쪽을 비워 둬야 Word에서도 홀수 쪽에만 나옴
+            if (oddOnlyHeader && !hdr.containsKey("even")) {
+                hdr.put("even", "");
+            }
+            if (oddOnlyFooter && !ftr.containsKey("even")) {
+                ftr.put("even", "");
+            }
+            if (hdr.containsKey("even") || ftr.containsKey("even")) {
+                parts.evenAndOddHeaders();
+            }
+
+            StringBuilder b = new StringBuilder("<w:sectPr>");
+            for (Map.Entry<String, String> e : hdr.entrySet()) {
+                b.append(reference("header", e.getKey(), parts.headerFooter("hdr", e.getValue())));
+            }
+            if (titlePg && hdr.containsKey("default")) {
+                b.append(reference("header", "first", parts.headerFooter("hdr", firstHdr == null ? "" : firstHdr)));
+            }
+            for (Map.Entry<String, String> e : ftr.entrySet()) {
+                b.append(reference("footer", e.getKey(), parts.headerFooter("ftr", e.getValue())));
+            }
+            if (titlePg && ftr.containsKey("default")) {
+                b.append(reference("footer", "first", parts.headerFooter("ftr", firstFtr == null ? "" : firstFtr)));
+            }
+            b.append(DocxProps.pageSetup(secPr, colPr));
+            if (titlePg) {
+                b.append("<w:titlePg/>");
+            }
+            return b.append("<w:docGrid w:linePitch=\"360\"/></w:sectPr>").toString();
+        }
+
+        private static String reference(String what, String type, String rid) {
+            return "<w:" + what + "Reference w:type=\"" + type + "\" r:id=\"" + rid + "\"/>";
+        }
+
+        /** 한컴 쪽 번호(머리말과 따로 그려짐) → 머리말·꼬리말 끝에 붙일 문단. 없으면 null. */
+        private String pageNumParagraph() {
+            if (pageNum == null || "NONE".equals(pageNum.getAttribute("pos"))) {
+                return null;
+            }
+            String pos = pageNum.getAttribute("pos");
+            String jc = pos.contains("LEFT") ? "left" : pos.contains("RIGHT") ? "right" : "center";
+            if (pos.startsWith("INSIDE") || pos.startsWith("OUTSIDE")) {
+                stats.warn("쪽 번호 위치 " + pos + "는 가운데로 바꿈");
+            }
+            String format;
+            switch (pageNum.getAttribute("formatType")) {
+                case "ROMAN_SMALL":
+                    format = " \\* roman";
+                    break;
+                case "ROMAN_CAPITAL":
+                    format = " \\* ROMAN";
+                    break;
+                case "LATIN_SMALL":
+                    format = " \\* alphabetic";
+                    break;
+                case "LATIN_CAPITAL":
+                    format = " \\* ALPHABETIC";
+                    break;
+                case "DIGIT":
+                case "":
+                    format = "";
+                    break;
+                default:
+                    stats.warn("쪽 번호 모양 " + pageNum.getAttribute("formatType") + "는 숫자로 바꿈");
+                    format = "";
+            }
+            String side = pageNum.getAttribute("sideChar");
+            StringBuilder b = new StringBuilder("<w:p><w:pPr><w:jc w:val=\"").append(jc).append("\"/></w:pPr>");
+            if (!side.isEmpty()) {
+                b.append("<w:r><w:t xml:space=\"preserve\">").append(Xml.text(side)).append(" </w:t></w:r>");
+            }
+            b.append(field("PAGE" + format, ""));
+            if (!side.isEmpty()) {
+                b.append("<w:r><w:t xml:space=\"preserve\"> ").append(Xml.text(side)).append("</w:t></w:r>");
+            }
+            return b.append("</w:p>").toString();
         }
 
         private void text(Element t, String rPr, StringBuilder out) throws IOException {
@@ -446,6 +626,12 @@ public final class HwpxToDocx implements Converter {
         private static final long EMU_PER_HWPUNIT = 127; // 914400 EMU/인치 ÷ 7200 HWPUNIT/인치
 
         private void picture(Element pic, String rPr, StringBuilder out) throws IOException {
+            if (headerFooterDepth > 0) {
+                // 머리말 파트는 자기 관계 파일이 따로 있어야 해서 아직 옮기지 않음
+                stats.warn("머리말·꼬리말 안 그림은 아직 옮기지 않음");
+                skip(pic);
+                return;
+            }
             Element img = child(pic, HwpxHeader.NS_HC, "img");
             String ref = img == null ? "" : img.getAttribute("binaryItemIDRef");
             String[] item = pkg.item(ref);
