@@ -95,12 +95,24 @@ final class DocxParts {
         return rid;
     }
 
+    private String numberingXml;
+
+    void numbering(String xml) {
+        numberingXml = xml;
+    }
+
     void evenAndOddHeaders() {
         evenAndOddHeaders = true;
     }
 
     Map<String, byte[]> entries(String documentXml) {
         Map<String, byte[]> m = DocxSkeleton.entries();
+        if (numberingXml != null) {
+            parts.put("word/numbering.xml", utf8(numberingXml));
+            overrides.put("/word/numbering.xml",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml");
+            rels.add(new String[]{"rId" + nextRel++, "numbering", "numbering.xml"});
+        }
         m.put("[Content_Types].xml", utf8(DocxSkeleton.contentTypesXml(defaults, overrides)));
         m.put("word/settings.xml", utf8(DocxSkeleton.settingsXml(evenAndOddHeaders)));
         m.put("word/document.xml", utf8(documentXml));
