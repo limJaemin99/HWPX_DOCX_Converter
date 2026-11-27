@@ -82,8 +82,8 @@ public final class DocxToHwpx implements Converter {
             }
             sections.add(HwpxSkeleton.sectionXml(section.toString()));
         }
-        HwpxSkeleton.write(HwpxSkeleton.entries(HwpxSkeleton.headerXml(run.refs.refList(), sections.size()),
-                sections, run.binItems, run.binData), out);
+        String header = HwpxSkeleton.headerXml(run.refs.refList(run.numbering.refXml()), sections.size());
+        HwpxSkeleton.write(HwpxSkeleton.entries(header, sections, run.binItems, run.binData), out);
     }
 
     /** 문단 안의 한 조각: 글, 탭, 줄바꿈, 쪽 나눔, 쪽 번호. */
@@ -149,6 +149,7 @@ public final class DocxToHwpx implements Converter {
         final Map<String, byte[]> binData = new LinkedHashMap<String, byte[]>();
         private final Map<String, String> binIdByTarget = new HashMap<String, String>();
         final HwpxRefs refs = new HwpxRefs();
+        final HwpxNumbering numbering;
         // 표·그림 등 개체 ID. 문서 안에서 겹치지 않으면 됨
         int nextObjectId = 1000;
         // 본문 문단 pPr 안의 구역 설정과, 그 구역이 끝나는 위치(본문 HWPX 문단 수)
@@ -162,6 +163,7 @@ public final class DocxToHwpx implements Converter {
             this.stats = stats;
             this.part = pkg.mainPart;
             this.rels = pkg.rels(part);
+            this.numbering = new HwpxNumbering(pkg, stats);
             // 바탕글(ID 0)은 기본 문단 스타일의 모양
             Props[] base = styles.paragraphBase(null);
             charId(base[1]);
@@ -434,11 +436,12 @@ public final class DocxToHwpx implements Converter {
             stats.paragraph();
             Element pPr = child(p, "pPr");
             Props[] base = styles.paragraphBase(attr(child(pPr, "pStyle"), "val"));
-            Props pp = base[0].applyPara(pPr);
+            Props pp = base[0].copy().applyPara(pPr);
             Props rp = base[1];
-            String numId = pp.get("numId");
-            if (numId != null && !"0".equals(numId)) {
-                stats.warn("자동 번호·글머리표는 아직 옮기지 않음 (번호 글자가 빠짐)");
+            // 우선순위: 직접 서식 > 번호 수준의 pPr(들여쓰기) > 문단 스타일
+            HwpxNumbering.Level num = numbering.level(pp.get("numId"), pp.num("ilvl", 0));
+            if (num != null) {
+                pp = base[0].applyPara(num.pPr).applyPara(pPr);
             }
             Props mark = rp.copy().applyRun(child(pPr, "rPr"));
 
@@ -451,7 +454,7 @@ public final class DocxToHwpx implements Converter {
                     biggest = it.props;
                 }
             }
-            int paraId = refs.paraId(pp, lineFactor(biggest));
+            int paraId = refs.paraId(pp, lineFactor(biggest), num == null ? HwpxRefs.NO_HEADING : num.heading);
             int markId = charId(mark);
 
             // w:br type=page는 한컴에 없어서 문단을 나누고 다음 문단에 쪽 나눔을 검
