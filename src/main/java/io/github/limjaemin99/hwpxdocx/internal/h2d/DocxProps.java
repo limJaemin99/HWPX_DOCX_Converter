@@ -279,6 +279,83 @@ final class DocxProps {
         return b.toString();
     }
 
+    private static final String[][] SIDES = {
+            {"top", "topBorder"}, {"left", "leftBorder"}, {"bottom", "bottomBorder"}, {"right", "rightBorder"}};
+
+    /** 테두리·배경의 네 변 → {@code <w:tag>…</w:tag>} (tag는 tcBorders·tblBorders). 테두리 정의가 없으면 빈 문자열. */
+    static String borders(Element borderFill, String tag) {
+        if (borderFill == null) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<w:").append(tag).append('>');
+        for (String[] s : SIDES) {
+            Element e = child(borderFill, NS_HH, s[1]);
+            String type = e == null ? "NONE" : e.getAttribute("type");
+            if (type.isEmpty() || "NONE".equals(type)) {
+                b.append("<w:").append(s[0]).append(" w:val=\"nil\"/>");
+                continue;
+            }
+            String color = hex(e.getAttribute("color"));
+            b.append("<w:").append(s[0]).append(" w:val=\"").append(borderStyle(type)).append("\" w:sz=\"")
+                    .append(borderSize(e.getAttribute("width"))).append("\" w:space=\"0\" w:color=\"")
+                    .append(color == null ? "000000" : color).append("\"/>");
+        }
+        return b.append("</w:").append(tag).append('>').toString();
+    }
+
+    /** 단색 채우기 → w:shd. 흰색·채우기 없음은 빈 문자열. */
+    static String shading(Element borderFill) {
+        Element fill = child(borderFill, NS_HC, "fillBrush");
+        Element win = child(fill, NS_HC, "winBrush");
+        String face = win == null ? null : hex(win.getAttribute("faceColor"));
+        if (face == null || "FFFFFF".equals(face)) {
+            return "";
+        }
+        return "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"" + face + "\"/>";
+    }
+
+    // 한컴 선 굵기는 "0.12 mm" 같은 문자열, Word는 1/8 pt (2~96)
+    static int borderSize(String width) {
+        String num = width == null ? "" : width.replaceAll("[^0-9.]", "");
+        double mm;
+        try {
+            mm = num.isEmpty() ? 0.12 : Double.parseDouble(num);
+        } catch (NumberFormatException e) {
+            mm = 0.12;
+        }
+        long sz = Math.round(mm / 25.4 * 72 * 8);
+        return (int) Math.max(2, Math.min(96, sz));
+    }
+
+    private static String borderStyle(String type) {
+        switch (type) {
+            case "DASH":
+            case "LONG_DASH":
+                return "dashed";
+            case "DOT":
+            case "CIRCLE":
+                return "dotted";
+            case "DASH_DOT":
+                return "dotDash";
+            case "DASH_DOT_DOT":
+                return "dotDotDash";
+            case "DOUBLE_SLIM":
+                return "double";
+            case "SLIM_THICK":
+                return "thinThickSmallGap";
+            case "THICK_SLIM":
+                return "thickThinSmallGap";
+            case "SLIM_THICK_SLIM":
+                return "thinThickThinSmallGap";
+            case "WAVE":
+                return "wave";
+            case "DOUBLE_WAVE":
+                return "doubleWave";
+            default:
+                return "single";
+        }
+    }
+
     private static int marginValue(Element margin, String local, int div, ConvertStats stats) {
         Element e = child(margin, NS_HC, local);
         if (e == null) {
@@ -292,8 +369,22 @@ final class DocxProps {
         return intAttr(e, "value", 0) / div;
     }
 
+    /** 문단 모양의 가로 정렬 → w:jc 값. */
+    static String jc(HwpxHeader h, String paraPrId) {
+        Element a = child(h.paraPr(paraPrId), NS_HH, "align");
+        return jcValue(a == null ? "JUSTIFY" : a.getAttribute("horizontal"));
+    }
+
     private static String align(Element a, ConvertStats stats) {
         String v = a == null ? "JUSTIFY" : a.getAttribute("horizontal");
+        if ("DISTRIBUTE_SPACE".equals(v)) {
+            // 한컴 "나눔"은 글자 사이가 아닌 낱말 사이를 벌림. Word에 같은 것이 없어 배분으로
+            stats.warn("정렬 '나눔'은 Word '배분'으로 바꿈");
+        }
+        return jcValue(v);
+    }
+
+    private static String jcValue(String v) {
         switch (v) {
             case "LEFT":
                 return "left";
@@ -304,8 +395,6 @@ final class DocxProps {
             case "DISTRIBUTE":
                 return "distribute";
             case "DISTRIBUTE_SPACE":
-                // 한컴 "나눔"은 글자 사이가 아닌 낱말 사이를 벌림. Word에 같은 것이 없어 배분으로
-                stats.warn("정렬 '나눔'은 Word '배분'으로 바꿈");
                 return "distribute";
             default:
                 return "both";
