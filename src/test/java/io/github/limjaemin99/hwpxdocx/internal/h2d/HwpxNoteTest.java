@@ -65,7 +65,9 @@ class HwpxNoteTest {
 
     private static TestHwpx withNotePr(TestHwpx h, String prs) {
         String sec = h.get("Contents/section0.xml");
-        return h.put("Contents/section0.xml", sec.replace("</hp:secPr>", prs + "</hp:secPr>"));
+        // 골격의 기본 각주·미주 모양을 바꿔 넣음
+        return h.put("Contents/section0.xml", sec.replaceFirst("(?s)<hp:footNotePr>.*</hp:endNotePr>",
+                java.util.regex.Matcher.quoteReplacement(prs)));
     }
 
     private static TestHwpx footnoteDoc() {

@@ -156,6 +156,9 @@ public final class DocxToHwpx implements Converter {
         final List<Element> sectionEnds = new ArrayList<Element>();
         final List<Integer> sectionCuts = new ArrayList<Integer>();
         private int tableDepth;
+        // 각주·미주 안을 읽는 중인지, 각주 파트별 문서
+        private boolean inNote;
+        private final Map<String, org.w3c.dom.Document> noteParts = new HashMap<String, org.w3c.dom.Document>();
 
         Run(DocxPackage pkg, DocxStyles styles, ConvertStats stats) throws IOException {
             this.pkg = pkg;
@@ -686,6 +689,16 @@ public final class DocxToHwpx implements Converter {
                     case "drawing":
                         picture(c, rd, items);
                         break;
+                    case "footnoteReference":
+                    case "endnoteReference":
+                        note(c, rd, items);
+                        break;
+                    case "footnoteRef":
+                    case "endnoteRef":
+                        if (inNote) {
+                            items.add(new Item(rd, Item.AUTO_NUM, "footnoteRef".equals(name) ? "FOOTNOTE" : "ENDNOTE"));
+                        }
+                        break;
                     case "pict":
                         vmlPicture(c, rd, items);
                         break;
@@ -698,6 +711,118 @@ public final class DocxToHwpx implements Converter {
                         skip(c);
                 }
             }
+        }
+
+        // ---------- 각주·미주 ----------
+
+        /** w:footnoteReference·w:endnoteReference → 그 자리의 hp:footNote·hp:endNote. 각주 안 문단은 본문과 같이 옮긴다. */
+        private void note(Element ref, Props rd, List<Item> items) throws IOException {
+            boolean foot = "footnoteReference".equals(ref.getLocalName());
+            String kind = foot ? "footnote" : "endnote";
+            String id = attr(ref, "id");
+            if (inNote || !pkg.mainPart.equals(part)) {
+                stats.warn("본문 밖(머리말·각주 안)의 각주 참조는 뺌");
+                skip(ref);
+                return;
+            }
+            String partName = pkg.related(kind + "s");
+            Element note = partName == null ? null : noteById(partName, kind, id);
+            if (note == null) {
+                stats.warn("각주 " + id + "를 각주 파트에서 못 찾음");
+                skip(ref);
+                return;
+            }
+            List<String> paras = new ArrayList<String>();
+            String savedPart = part;
+            Map<String, DocxPackage.Rel> savedRels = rels;
+            inNote = true;
+            try {
+                part = partName;
+                rels = pkg.rels(partName);
+                blocks(note, paras);
+            } finally {
+                inNote = false;
+                part = savedPart;
+                rels = savedRels;
+            }
+            StringBuilder b = new StringBuilder("<hp:ctrl><hp:").append(foot ? "footNote" : "endNote")
+                    .append(" number=\"").append(id).append("\" instId=\"").append(nextObjectId++).append("\">")
+                    .append("<hp:subList id=\"\" textDirection=\"HORIZONTAL\" lineWrap=\"BREAK\" vertAlign=\"TOP\"")
+                    .append(" linkListIDRef=\"0\" linkListNextIDRef=\"0\" textWidth=\"0\" textHeight=\"0\"")
+                    .append(" hasTextRef=\"0\" hasNumRef=\"0\">");
+            if (paras.isEmpty()) {
+                b.append("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">")
+                        .append("<hp:run charPrIDRef=\"0\"/></hp:p>");
+            }
+            for (String p : paras) {
+                b.append(p);
+            }
+            b.append("</hp:subList></hp:").append(foot ? "footNote" : "endNote").append("></hp:ctrl>");
+            items.add(new Item(rd, Item.OBJECT, b.toString()));
+        }
+
+        // 구분선(separator) 등 w:type이 있는 각주는 본문에서 가리키지 않는 특수 각주
+        private Element noteById(String partName, String kind, String id) throws IOException {
+            org.w3c.dom.Document d = noteParts.get(partName);
+            if (d == null) {
+                d = pkg.parse(partName);
+                noteParts.put(partName, d);
+            }
+            NodeList l = d.getElementsByTagNameNS(NS_W, kind);
+            for (int i = 0; i < l.getLength(); i++) {
+                Element e = (Element) l.item(i);
+                String type = attr(e, "type");
+                if (id != null && id.equals(attr(e, "id")) && (type == null || "normal".equals(type))) {
+                    return e;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * 구역 w:footnotePr·w:endnotePr(없으면 settings 것) → hp:footNotePr·hp:endNotePr.
+         * Word 미주 번호 기본값은 로마 숫자(i, ii)라 적지 않았으면 ROMAN_SMALL.
+         */
+        private String notePrs(Element sectPr) throws IOException {
+            StringBuilder b = new StringBuilder();
+            for (String kind : new String[]{"footnote", "endnote"}) {
+                boolean foot = "footnote".equals(kind);
+                Element own = child(sectPr, kind + "Pr");
+                Element doc = settingsElement(kind + "Pr");
+                String fmt = notePrValue(own, doc, "numFmt", foot ? "decimal" : "lowerRoman");
+                String hwpFmt = HwpxNumbering.format(fmt);
+                if (hwpFmt == null) {
+                    stats.warn("각주 번호 모양 " + fmt + "는 숫자로 바꿈");
+                    hwpFmt = "DIGIT";
+                }
+                String restart = notePrValue(own, doc, "numRestart", "continuous");
+                String numbering = "eachSect".equals(restart) ? "ON_SECTION"
+                        : "eachPage".equals(restart) && foot ? "ON_PAGE" : "CONTINUOUS";
+                int start = parseInt(notePrValue(own, doc, "numStart", "1"), 1);
+                String pos = notePrValue(own, doc, "pos", foot ? "pageBottom" : "docEnd");
+                String place = foot ? "EACH_COLUMN" : "sectEnd".equals(pos) ? "END_OF_SECTION" : "END_OF_DOCUMENT";
+                // Word 각주 안 번호에는 한컴 기본값 같은 닫는 괄호가 없음
+                b.append(HwpxSkeleton.notePr(foot ? "footNotePr" : "endNotePr", hwpFmt, "", numbering, Math.max(1, start),
+                        place, foot && "beneathText".equals(pos)));
+            }
+            return b.toString();
+        }
+
+        private static String notePrValue(Element own, Element doc, String local, String def) {
+            String v = attr(child(own, local), "val");
+            if (v == null) {
+                v = attr(child(doc, local), "val");
+            }
+            return v == null ? def : v;
+        }
+
+        private Element settingsElement(String local) throws IOException {
+            String settings = pkg.related("settings");
+            if (settings == null) {
+                return null;
+            }
+            NodeList l = pkg.parse(settings).getElementsByTagNameNS(NS_W, local);
+            return l.getLength() == 0 ? null : (Element) l.item(0);
         }
 
         // ---------- 쪽 설정·머리말·꼬리말 ----------
@@ -777,7 +902,7 @@ public final class DocxToHwpx implements Converter {
                     ctrls.append(headerFooter(what, "EVEN", parts.get("even")));
                 }
             }
-            String run = HwpxSkeleton.secPrRun("0", pagePr, start, titlePg, titlePg, colCount, colGap);
+            String run = HwpxSkeleton.secPrRun("0", pagePr, start, titlePg, titlePg, colCount, colGap, notePrs(sectPr));
             if (ctrls.length() > 0) {
                 run += "<hp:run charPrIDRef=\"0\">" + ctrls + "</hp:run>";
             }

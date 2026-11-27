@@ -1,5 +1,7 @@
 package io.github.limjaemin99.hwpxdocx.internal.hwpx;
 
+import io.github.limjaemin99.hwpxdocx.internal.Xml;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -324,6 +326,31 @@ public final class HwpxSkeleton {
      */
     public static String secPrRun(String charPrId, String pagePr, int startPage, boolean hideFirstHeader,
                                   boolean hideFirstFooter, int colCount, int colGap) {
+        return secPrRun(charPrId, pagePr, startPage, hideFirstHeader, hideFirstFooter, colCount, colGap,
+                notePr("footNotePr", "DIGIT", ")", "CONTINUOUS", 1, "EACH_COLUMN", false)
+                        + notePr("endNotePr", "DIGIT", ")", "CONTINUOUS", 1, "END_OF_DOCUMENT", false));
+    }
+
+    /**
+     * 각주·미주 모양(hp:footNotePr·hp:endNotePr). 구분선·간격은 한글 새 문서 기본값.
+     *
+     * @param numbering CONTINUOUS·ON_SECTION·ON_PAGE
+     * @param place     각주 EACH_COLUMN 등, 미주 END_OF_DOCUMENT·END_OF_SECTION
+     */
+    public static String notePr(String tag, String format, String suffix, String numbering, int newNum, String place,
+                                boolean beneathText) {
+        boolean foot = "footNotePr".equals(tag);
+        return "<hp:" + tag + "><hp:autoNumFormat type=\"" + format + "\" userChar=\"\" prefixChar=\"\" suffixChar=\""
+                + Xml.attr(suffix) + "\" supscript=\"0\"/>"
+                + "<hp:noteLine length=\"" + (foot ? "-1" : "14692344") + "\" type=\"SOLID\" width=\"0.12 mm\" color=\"#000000\"/>"
+                + "<hp:noteSpacing betweenNotes=\"" + (foot ? 283 : 0) + "\" belowLine=\"567\" aboveLine=\"850\"/>"
+                + "<hp:numbering type=\"" + numbering + "\" newNum=\"" + newNum + "\"/>"
+                + "<hp:placement place=\"" + place + "\" beneathText=\"" + (beneathText ? 1 : 0) + "\"/></hp:" + tag + ">";
+    }
+
+    /** @param notePr 구역의 hp:footNotePr·hp:endNotePr ({@link #notePr}) */
+    public static String secPrRun(String charPrId, String pagePr, int startPage, boolean hideFirstHeader,
+                                  boolean hideFirstFooter, int colCount, int colGap, String notePr) {
         return "<hp:run charPrIDRef=\"" + charPrId + "\">"
                 + "<hp:secPr id=\"\" textDirection=\"HORIZONTAL\" spaceColumns=\"1134\" tabStop=\"8000\""
                 + " tabStopVal=\"4000\" tabStopUnit=\"HWPUNIT\" outlineShapeIDRef=\"0\" memoShapeIDRef=\"0\""
@@ -336,6 +363,7 @@ public final class HwpxSkeleton {
                 + " showLineNumber=\"0\"/>"
                 + "<hp:lineNumberShape restartType=\"0\" countBy=\"0\" distance=\"0\" startNumber=\"0\"/>"
                 + pagePr
+                + notePr
                 + "</hp:secPr>"
                 + "<hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"" + Math.max(1, colCount)
                 + "\" sameSz=\"1\" sameGap=\"" + colGap + "\"/></hp:ctrl>"

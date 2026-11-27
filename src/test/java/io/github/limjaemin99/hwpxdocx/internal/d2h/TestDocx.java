@@ -79,6 +79,26 @@ final class TestDocx {
         return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
     }
 
+    /** word/footnotes.xml·endnotes.xml({@code tag}는 footnotes·endnotes)을 넣고 본문 관계에 이음. 구분선 특수 각주를 앞에 둠. */
+    TestDocx notes(String tag, String inner) {
+        String one = tag.substring(0, tag.length() - 1);
+        rels.add(new String[]{"footnotes".equals(tag) ? "rId7" : "rId6", tag, tag + ".xml"});
+        String sep = "<w:" + one + " w:type=\"separator\" w:id=\"-1\"><w:p><w:r><w:separator/></w:r></w:p></w:" + one + ">"
+                + "<w:" + one + " w:type=\"continuationSeparator\" w:id=\"0\"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:"
+                + one + ">";
+        put("word/" + tag + ".xml", "<w:" + tag + " " + W_NS + " xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\""
+                + " xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\">"
+                + sep + inner + "</w:" + tag + ">");
+        return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
+    }
+
+    /** 각주 파트 안 관계(그림)를 넣음. */
+    TestDocx noteImage(String tag, String rid, String target, byte[] data) {
+        entries.put("word/" + target, data);
+        return put("word/_rels/" + tag + ".xml.rels", DocxSkeleton.relationshipsXml(
+                java.util.Collections.singletonList(new String[]{rid, "image", target})));
+    }
+
     TestDocx evenAndOddHeaders() {
         return put("word/settings.xml", DocxSkeleton.settingsXml(true));
     }
