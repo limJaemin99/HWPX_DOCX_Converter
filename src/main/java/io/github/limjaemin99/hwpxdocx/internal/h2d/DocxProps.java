@@ -114,7 +114,8 @@ final class DocxProps {
             // 한컴 위치는 글자 크기에 대한 %(아래가 +), Word는 반 pt(위가 +)
             b.append("<w:position w:val=\"").append(Math.round(-height * off / 5000.0f)).append("\"/>");
         }
-        int sz = Math.max(1, Math.round(height / 50.0f));
+        // ST_HpsMeasure 허용 범위 2~3276 (1~1638pt). 벗어나면 Open XML 규격 검사에서 걸림
+        int sz = Math.max(2, Math.min(3276, Math.round(height / 50.0f)));
         b.append("<w:sz w:val=\"").append(sz).append("\"/><w:szCs w:val=\"").append(sz).append("\"/>");
         Element ul = child(c, NS_HH, "underline");
         String ulType = ul == null ? "NONE" : ul.getAttribute("type");

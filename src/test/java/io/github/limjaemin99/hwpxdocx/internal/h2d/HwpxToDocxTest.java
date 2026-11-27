@@ -179,6 +179,14 @@ class HwpxToDocxTest {
     }
 
     @Test
+    void fontSizeStaysInDocxRange() throws Exception {
+        convert(new TestHwpx().charPrs(BASE_CHAR, charPr("1", 10, "", ""), charPr("2", 900000, "", ""))
+                .paragraphs(para("0", run("1", t("제3조"))), para("0", run("2", t("제4조")))).toBytes());
+        assertEquals("2", val(runProps(p(1)), "sz", "val"));
+        assertEquals("3276", val(runProps(p(2)), "sz", "val"));
+    }
+
+    @Test
     void hftFontMapsToTtf() throws Exception {
         String c = charPr("1", 1000, "", "").replace("<hh:fontRef hangul=\"0\"", "<hh:fontRef hangul=\"1\"");
         convert(new TestHwpx().hangulFonts("한양신명조").charPrs(BASE_CHAR, c)
