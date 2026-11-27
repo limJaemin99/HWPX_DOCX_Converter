@@ -26,19 +26,8 @@ import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.child;
 /** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양), 표, 그림, 구역별 쪽 설정, 머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class DocxToHwpx implements Converter {
 
-    // Word 한 줄 높이 ÷ 글자 크기 (Word에서 잰 값). 배수 줄 간격을 한컴 비율로 바꿀 때 씀. 없는 글꼴은 평균값
-    private static final Map<String, Double> LINE_FACTOR = new HashMap<String, Double>();
+    // 줄 높이 표(FontLineTable)에 없는 글꼴의 Word 한 줄 높이 ÷ 글자 크기
     private static final double DEFAULT_LINE_FACTOR = 1.3;
-
-    static {
-        LINE_FACTOR.put("맑은 고딕", 1.73);
-        LINE_FACTOR.put("함초롬바탕", 1.69);
-        LINE_FACTOR.put("함초롬돋움", 1.69);
-        LINE_FACTOR.put("나눔고딕", 1.5);
-        LINE_FACTOR.put("Times New Roman", 1.15);
-        LINE_FACTOR.put("Arial", 1.15);
-        LINE_FACTOR.put("Calibri", 1.22);
-    }
 
     @Override
     public void convert(InputStream in, OutputStream out, ConvertOptions options, ConvertStats stats)
@@ -180,8 +169,8 @@ public final class DocxToHwpx implements Converter {
         }
 
         double lineFactor(Props r) {
-            Double ea = LINE_FACTOR.get(styles.eastAsiaFont(r));
-            Double la = LINE_FACTOR.get(styles.latinFont(r));
+            Double ea = FontLineTable.factor(styles.eastAsiaFont(r));
+            Double la = FontLineTable.factor(styles.latinFont(r));
             return Math.max(ea == null ? DEFAULT_LINE_FACTOR : ea, la == null ? DEFAULT_LINE_FACTOR : la);
         }
 
