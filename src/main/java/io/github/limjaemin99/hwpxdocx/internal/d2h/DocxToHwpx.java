@@ -23,7 +23,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.NS_W;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.attr;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.child;
 
-/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양), 표, 그림을 옮긴다. 변환 한 번마다 새로 만든다. */
+/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양), 표, 그림, 쪽 설정, 머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class DocxToHwpx implements Converter {
 
     // Word 한 줄 높이 ÷ 글자 크기 (Word에서 잰 값). 배수 줄 간격을 한컴 비율로 바꿀 때 씀. 없는 글꼴은 평균값
@@ -47,17 +47,24 @@ public final class DocxToHwpx implements Converter {
         Run run = new Run(pkg, new DocxStyles(pkg), stats);
         NodeList bodies = pkg.parse(pkg.mainPart).getElementsByTagNameNS(NS_W, "body");
         List<String> paragraphs = new ArrayList<String>();
+        Element sectPr = null;
         if (bodies.getLength() > 0) {
-            run.blocks((Element) bodies.item(0), paragraphs);
+            Element body = (Element) bodies.item(0);
+            run.blocks(body, paragraphs);
+            for (Node n = body.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (n instanceof Element && "sectPr".equals(n.getLocalName()) && NS_W.equals(n.getNamespaceURI())) {
+                    sectPr = (Element) n;
+                }
+            }
         }
         if (paragraphs.isEmpty()) {
             paragraphs.add("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
                     + "<hp:run charPrIDRef=\"0\"/></hp:p>");
         }
-        // 구역 설정은 첫 문단의 맨 앞 런에 둠
+        // 구역 설정과 머리말·꼬리말은 첫 문단의 맨 앞 런에 둠
         String first = paragraphs.get(0);
         int open = first.indexOf('>') + 1;
-        paragraphs.set(0, first.substring(0, open) + HwpxSkeleton.secPrRun("0") + first.substring(open));
+        paragraphs.set(0, first.substring(0, open) + run.section(sectPr) + first.substring(open));
         StringBuilder section = new StringBuilder();
         for (String p : paragraphs) {
             section.append(p);
@@ -659,6 +666,126 @@ public final class DocxToHwpx implements Converter {
                         skip(c);
                 }
             }
+        }
+
+        // ---------- 쪽 설정·머리말·꼬리말 ----------
+
+        /**
+         * 마지막 w:sectPr → 구역 설정 런 + 머리말·꼬리말 런.
+         * Word 위 여백은 용지 끝에서 본문까지, 머리말 거리는 용지 끝에서 머리말까지라
+         * 한컴 위 여백 = 머리말 거리, 머리말 높이 = 위 여백 − 머리말 거리로 바꾼다 (아래도 같음).
+         */
+        String section(Element sectPr) throws IOException {
+            if (sectPr == null) {
+                return HwpxSkeleton.secPrRun("0");
+            }
+            Element pgSz = child(sectPr, "pgSz");
+            Element pgMar = child(sectPr, "pgMar");
+            int w = parseInt(attr(pgSz, "w"), 11906);
+            int h = parseInt(attr(pgSz, "h"), 16838);
+            boolean landscape = "landscape".equals(attr(pgSz, "orient"));
+            // Word는 위·아래 여백에 음수를 쓸 수 있음 (머리말이 길어도 본문 위치 고정)
+            int top = Math.abs(parseInt(attr(pgMar, "top"), 1440));
+            int bottom = Math.abs(parseInt(attr(pgMar, "bottom"), 1440));
+            int header = parseInt(attr(pgMar, "header"), 851);
+            int footer = parseInt(attr(pgMar, "footer"), 992);
+            String pagePr = "<hp:pagePr landscape=\"" + (landscape ? "NARROWLY" : "WIDELY") + "\" width=\"" + w * 5
+                    + "\" height=\"" + h * 5 + "\" gutterType=\"LEFT_ONLY\"><hp:margin header=\""
+                    + Math.max(0, top - header) * 5 + "\" footer=\"" + Math.max(0, bottom - footer) * 5
+                    + "\" gutter=\"" + parseInt(attr(pgMar, "gutter"), 0) * 5
+                    + "\" left=\"" + parseInt(attr(pgMar, "left"), 1440) * 5
+                    + "\" right=\"" + parseInt(attr(pgMar, "right"), 1440) * 5
+                    + "\" top=\"" + header * 5 + "\" bottom=\"" + footer * 5 + "\"/></hp:pagePr>";
+            Element cols = child(sectPr, "cols");
+            int colCount = parseInt(attr(cols, "num"), 1);
+            int colGap = parseInt(attr(cols, "space"), colCount > 1 ? 720 : 0) * 5;
+            int start = parseInt(attr(child(sectPr, "pgNumType"), "start"), 0);
+            Element titlePgEl = child(sectPr, "titlePg");
+            boolean titlePg = titlePgEl != null && !"0".equals(attr(titlePgEl, "val")) && !"false".equals(attr(titlePgEl, "val"));
+
+            boolean evenOdd = evenAndOddHeaders();
+            StringBuilder ctrls = new StringBuilder();
+            for (String what : new String[]{"header", "footer"}) {
+                Map<String, String> parts = new HashMap<String, String>();
+                for (Node n = sectPr.getFirstChild(); n != null; n = n.getNextSibling()) {
+                    if (n instanceof Element && (what + "Reference").equals(n.getLocalName())) {
+                        Element ref = (Element) n;
+                        String type = attr(ref, "type") == null ? "default" : attr(ref, "type");
+                        DocxPackage.Rel rel = rels.get(ref.getAttributeNS(NS_R, "id"));
+                        if (rel != null && !rel.external && pkg.has(rel.target)) {
+                            parts.put(type, rel.target);
+                        }
+                    }
+                }
+                if (titlePg && parts.containsKey("first") && hasText(parts.get("first"))) {
+                    // 한컴은 첫 쪽 머리말을 따로 둘 수 없고 감추기만 됨
+                    stats.warn("첫 쪽만 다른 머리말·꼬리말은 첫 쪽 감추기로 바꿈");
+                }
+                if (parts.containsKey("default")) {
+                    String apply = evenOdd && parts.containsKey("even") ? "ODD" : "BOTH";
+                    ctrls.append(headerFooter(what, apply, parts.get("default")));
+                }
+                if (evenOdd && parts.containsKey("even")) {
+                    ctrls.append(headerFooter(what, "EVEN", parts.get("even")));
+                }
+            }
+            String run = HwpxSkeleton.secPrRun("0", pagePr, start, titlePg, titlePg, colCount, colGap);
+            if (ctrls.length() > 0) {
+                run += "<hp:run charPrIDRef=\"0\">" + ctrls + "</hp:run>";
+            }
+            return run;
+        }
+
+        private boolean evenAndOddHeaders() throws IOException {
+            String settings = pkg.related("settings");
+            if (settings == null) {
+                return false;
+            }
+            NodeList l = pkg.parse(settings).getElementsByTagNameNS(NS_W, "evenAndOddHeaders");
+            if (l.getLength() == 0) {
+                return false;
+            }
+            String v = attr((Element) l.item(0), "val");
+            return !"0".equals(v) && !"false".equals(v);
+        }
+
+        private boolean hasText(String part) throws IOException {
+            NodeList ts = pkg.parse(part).getElementsByTagNameNS(NS_W, "t");
+            for (int i = 0; i < ts.getLength(); i++) {
+                if (!ts.item(i).getTextContent().trim().isEmpty()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 머리말·꼬리말 파트 하나 → hp:header·hp:footer 컨트롤. 그 파트의 관계로 그림을 찾는다. */
+        private String headerFooter(String what, String applyPageType, String partName) throws IOException {
+            String savedPart = part;
+            Map<String, DocxPackage.Rel> savedRels = rels;
+            List<String> paras = new ArrayList<String>();
+            try {
+                part = partName;
+                rels = pkg.rels(partName);
+                blocks(pkg.parse(partName).getDocumentElement(), paras);
+            } finally {
+                part = savedPart;
+                rels = savedRels;
+            }
+            StringBuilder b = new StringBuilder("<hp:ctrl><hp:").append(what).append(" id=\"").append(nextObjectId++)
+                    .append("\" applyPageType=\"").append(applyPageType).append("\">")
+                    .append("<hp:subList id=\"\" textDirection=\"HORIZONTAL\" lineWrap=\"BREAK\" vertAlign=\"")
+                    .append("header".equals(what) ? "TOP" : "BOTTOM")
+                    .append("\" linkListIDRef=\"0\" linkListNextIDRef=\"0\" textWidth=\"0\" textHeight=\"0\"")
+                    .append(" hasTextRef=\"0\" hasNumRef=\"0\">");
+            if (paras.isEmpty()) {
+                b.append("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">")
+                        .append("<hp:run charPrIDRef=\"0\"/></hp:p>");
+            }
+            for (String p : paras) {
+                b.append(p);
+            }
+            return b.append("</hp:subList></hp:").append(what).append("></hp:ctrl>").toString();
         }
 
         // ---------- 그림 ----------

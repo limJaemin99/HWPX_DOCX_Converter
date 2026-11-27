@@ -280,23 +280,33 @@ public final class HwpxSkeleton {
 
     /** @param pagePr hp:pagePr 요소 전체 */
     public static String secPrRun(String charPrId, String pagePr) {
+        return secPrRun(charPrId, pagePr, 0, false, false, 1, 0);
+    }
+
+    /**
+     * @param startPage       시작 쪽 번호 (0이면 앞 구역에 이어서)
+     * @param hideFirstHeader 첫 쪽 머리말 감추기
+     * @param colCount        단 수, {@code colGap} 단 사이 간격(HWPUNIT)
+     */
+    public static String secPrRun(String charPrId, String pagePr, int startPage, boolean hideFirstHeader,
+                                  boolean hideFirstFooter, int colCount, int colGap) {
         return "<hp:run charPrIDRef=\"" + charPrId + "\">"
                 + "<hp:secPr id=\"\" textDirection=\"HORIZONTAL\" spaceColumns=\"1134\" tabStop=\"8000\""
                 + " tabStopVal=\"4000\" tabStopUnit=\"HWPUNIT\" outlineShapeIDRef=\"0\" memoShapeIDRef=\"0\""
                 + " textVerticalWidthHead=\"0\" masterPageCnt=\"0\">"
                 + "<hp:grid lineGrid=\"0\" charGrid=\"0\" wonggojiFormat=\"0\"/>"
-                + "<hp:startNum pageStartsOn=\"BOTH\" page=\"0\" pic=\"0\" tbl=\"0\" equation=\"0\"/>"
-                + "<hp:visibility hideFirstHeader=\"0\" hideFirstFooter=\"0\" hideFirstMasterPage=\"0\""
+                + "<hp:startNum pageStartsOn=\"BOTH\" page=\"" + startPage + "\" pic=\"0\" tbl=\"0\" equation=\"0\"/>"
+                + "<hp:visibility hideFirstHeader=\"" + (hideFirstHeader ? 1 : 0) + "\" hideFirstFooter=\""
+                + (hideFirstFooter ? 1 : 0) + "\" hideFirstMasterPage=\"0\""
                 + " border=\"SHOW_ALL\" fill=\"SHOW_ALL\" hideFirstPageNum=\"0\" hideFirstEmptyLine=\"0\""
                 + " showLineNumber=\"0\"/>"
                 + "<hp:lineNumberShape restartType=\"0\" countBy=\"0\" distance=\"0\" startNumber=\"0\"/>"
                 + pagePr
                 + "</hp:secPr>"
-                + "<hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"1\" sameSz=\"1\""
-                + " sameGap=\"0\"/></hp:ctrl>"
+                + "<hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"" + Math.max(1, colCount)
+                + "\" sameSz=\"1\" sameGap=\"" + colGap + "\"/></hp:ctrl>"
                 + "</hp:run>";
     }
-
     static String settingsXml() {
         return XML_DECL + "<ha:HWPApplicationSetting xmlns:ha=\"http://www.hancom.co.kr/hwpml/2011/app\""
                 + " xmlns:config=\"urn:oasis:names:tc:opendocument:xmlns:config:1.0\">"
