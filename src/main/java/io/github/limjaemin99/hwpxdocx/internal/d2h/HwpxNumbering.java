@@ -62,6 +62,11 @@ final class HwpxNumbering {
         SYMBOL_BULLETS.put('', "✓");
     }
 
+    /** Word numFmt → 한컴 번호 모양. 대응이 없으면 null. */
+    static String format(String word) {
+        return FORMATS.get(word);
+    }
+
     /** 한 문단에 적용할 번호: 문단 모양의 hh:heading과 그 수준의 Word 문단 속성(들여쓰기 등). */
     static final class Level {
         final String heading;
