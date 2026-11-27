@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.limjaemin99</groupId>
+  <artifactId>hwpx-docx-converter</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>HWPX DOCX Converter</name>
+  <description>HWPX와 DOCX 문서를 서로 바꾸는 자바 라이브러리 (외부 의존성 없음)</description>
+  <url>https://github.com/limJaemin99/HWPX_DOCX_Converter</url>
+  <inceptionYear>2026</inceptionYear>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>limJaemin99</id>
+      <name>Lim Jaemin</name>
+      <url>https://github.com/limJaemin99</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/limJaemin99/HWPX_DOCX_Converter.git</connection>
+    <developerConnection>scm:git:https://github.com/limJaemin99/HWPX_DOCX_Converter.git</developerConnection>
+    <url>https://github.com/limJaemin99/HWPX_DOCX_Converter</url>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>8</maven.compiler.release>
+    <main.class>io.github.limjaemin99.hwpxdocx.cli.Main</main.class>
+  </properties>
+
+  <!-- 런타임 의존성 없음. 시험도 JUnit 없이 src/test/java/.../testkit 으로 돎 (build.ps1, build.sh) -->
+
+  <!-- 릴리스 jar는 build.sh로 만듦 (LICENSE·NOTICE를 META-INF에 넣음). 이 pom은 이클립스 가져오기와 빌드 확인용 -->
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+          <compilerArgs>
+            <arg>-Xlint:all,-options</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <!-- 시험은 testkit 실행기로 돌림 -->
+          <skip>true</skip>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>${main.class}</mainClass>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+            </manifest>
+            <manifestEntries>
+              <Automatic-Module-Name>io.github.limjaemin99.hwpxdocx</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
