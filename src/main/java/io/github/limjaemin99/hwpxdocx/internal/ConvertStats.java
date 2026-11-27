@@ -42,8 +42,11 @@ public final class ConvertStats {
         skipped.put(element, n == null ? 1 : n + 1);
     }
 
+    /** 같은 문구는 한 번만 남긴다 (모양 하나가 문단 여럿에 쓰여도 경고가 쌓이지 않게). */
     public void warn(String message) {
-        warnings.add(message);
+        if (!warnings.contains(message)) {
+            warnings.add(message);
+        }
     }
 
     public int getParagraphCount() {

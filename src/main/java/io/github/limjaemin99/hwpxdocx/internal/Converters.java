@@ -1,6 +1,7 @@
 package io.github.limjaemin99.hwpxdocx.internal;
 
 import io.github.limjaemin99.hwpxdocx.ConvertException;
+import io.github.limjaemin99.hwpxdocx.internal.h2d.HwpxToDocx;
 
 public final class Converters {
 
@@ -8,7 +9,7 @@ public final class Converters {
     }
 
     public static Converter hwpxToDocx() {
-        return notImplemented("HWPX → DOCX");
+        return new HwpxToDocx();
     }
 
     public static Converter docxToHwpx() {
