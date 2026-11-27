@@ -26,6 +26,8 @@ jobs:
           cache: maven
       - name: 빌드 (build.sh)
         run: bash build.sh build
+      - name: 네트워크 접근 코드 검사 (jdeps + src/main)
+        run: bash build.sh check
       - name: pom.xml 빌드 확인
         run: mvn -B -ntp -q package
       - uses: actions/upload-artifact@v7

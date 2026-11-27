@@ -3,6 +3,7 @@ JDK만으로 빌드·시험 (Maven 없이). Linux·CI는 build.sh
 
   .\build.ps1                 빌드 + 시험
   .\build.ps1 build           컴파일 → jar → 시험 클래스 컴파일 (JDK 9 이상)
+  .\build.ps1 check           jar·src/main에 네트워크 관련 API가 없는지 검사 (jdeps, JDK 9 이상)
   .\build.ps1 test            만들어 둔 jar로 시험만 (JDK 8 이상)
   .\build.ps1 clean
 
@@ -14,7 +15,7 @@ JDK만으로 빌드·시험 (Maven 없이). Linux·CI는 build.sh
 결과는 build\ (Maven·이클립스의 target\ 과 따로)
 #>
 param(
-    [ValidateSet('all', 'build', 'test', 'clean')]
+    [ValidateSet('all', 'build', 'check', 'test', 'clean')]
     [string]$Task = 'all',
     [string]$JavaHome = $env:JAVA_HOME,
     [string[]]$TestJavaHome = @()
@@ -89,6 +90,25 @@ function Invoke-Build {
     Write-Host "jar: $jar"
 }
 
+# build.sh do_check와 같은 검사
+$netPackages = '^(java\.net|javax\.net|jdk\.net|com\.sun\.net|sun\.net|java\.rmi|javax\.rmi|javax\.naming)(\.|$)'
+$netSource = 'java\.net|javax\.net|jdk\.net|jdk\.httpserver|com\.sun\.net|sun\.net|java\.rmi|javax\.rmi|javax\.naming|URLClassLoader|\bgetResources?\(|\btoURI\(|\btoURL\('
+
+function Invoke-Check {
+    if (-not (Test-Path -LiteralPath $jar)) { throw "jar가 없음: $jar (먼저 .\build.ps1 build)" }
+    $jdeps = Get-Tool $JavaHome 'jdeps'
+    $lines = & $jdeps -verbose:package $jar
+    if ($LASTEXITCODE -ne 0) { throw "$jdeps 실패 (종료 코드 $LASTEXITCODE)" }
+    $deps = @($lines | ForEach-Object { $f = -split $_; if ($f.Count -ge 3 -and $f[1] -eq '->') { , $f } })
+    $badDeps = @($deps | Where-Object { $_[2] -match $netPackages })
+    $badSrc = @(Get-ChildItem -LiteralPath 'src/main' -Recurse -File | Select-String -Pattern $netSource -CaseSensitive)
+    foreach ($d in $badDeps) { Write-Host "jar가 네트워크 관련 패키지를 씀: $($d[0]) -> $($d[2])" }
+    foreach ($s in $badSrc) { Write-Host "src/main에 네트워크 관련 이름이 있음: $($s.Path):$($s.LineNumber): $($s.Line.Trim())" }
+    if ($badDeps.Count -gt 0 -or $badSrc.Count -gt 0) { throw '네트워크 검사 실패' }
+    $count = @($deps | ForEach-Object { $_[2] } | Sort-Object -Unique).Count
+    Write-Host "네트워크 검사 통과: ${count}개 패키지 참조, 금지 패키지 없음"
+}
+
 function Invoke-Test {
     if (-not (Test-Path -LiteralPath $jar)) { throw "jar가 없음: $jar (먼저 .\build.ps1 build)" }
     $homes = if ($TestJavaHome.Count -gt 0) { $TestJavaHome } else { @($JavaHome) }
@@ -101,8 +121,9 @@ function Invoke-Test {
 }
 
 switch ($Task) {
-    'all' { Invoke-Build; Invoke-Test }
+    'all' { Invoke-Build; Invoke-Check; Invoke-Test }
     'build' { Invoke-Build }
+    'check' { Invoke-Check }
     'test' { Invoke-Test }
     'clean' { Invoke-Clean }
 }
