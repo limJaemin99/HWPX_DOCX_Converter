@@ -1,0 +1,68 @@
+name: Release
+
+# main에 합쳐지면 pom.xml 버전으로 태그와 GitHub Release를 만든다.
+# SNAPSHOT 버전이거나 이미 있는 버전이면 아무것도 하지 않는다.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 버전 확인
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' pom.xml | head -n 1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-SNAPSHOT ]]; then
+            echo "SNAPSHOT 버전($version)이라 릴리스하지 않음"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "v$version 태그가 이미 있음"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 빌드·시험
+        if: steps.version.outputs.skip == 'false'
+        run: bash build.sh
+
+      - name: 릴리스 노트 (CHANGELOG에서)
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v h="## [$VERSION]" 'index($0, h) == 1 {f = 1; next} f && /^## \[/ {exit} f {print}' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md에 [$VERSION] 항목이 없음" >&2
+            exit 1
+          fi
+
+      - name: 태그·릴리스 만들기
+        if: steps.version.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jar="hwpx-docx-converter-$VERSION.jar"
+          (cd build/libs && sha256sum "$jar" > "$jar.sha256")
+          gh release create "v$VERSION" "build/libs/$jar" "build/libs/$jar.sha256" \
+            --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md

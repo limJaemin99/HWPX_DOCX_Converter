@@ -1,5 +1,9 @@
 # HWPX DOCX Converter
 
+[![CI](https://github.com/limJaemin99/HWPX_DOCX_Converter/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/limJaemin99/HWPX_DOCX_Converter/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/limJaemin99/HWPX_DOCX_Converter?include_prereleases&sort=semver)](https://github.com/limJaemin99/HWPX_DOCX_Converter/releases)
+[![License](https://img.shields.io/github/license/limJaemin99/HWPX_DOCX_Converter)](LICENSE)
+
 HWPX(한컴오피스 한글) 문서와 DOCX(Microsoft Word) 문서를 서로 바꾸는 자바 라이브러리입니다.
 
 - 외부 라이브러리 없이 JDK 기본 기능만 씁니다. jar 하나만 넣으면 됩니다

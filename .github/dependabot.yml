@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # 라이브러리 의존성이 없으므로 Actions 버전만 갱신
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: friday
+      time: '18:00'
+      timezone: Asia/Seoul
+    commit-message:
+      prefix: ci
+    labels:
+      - chore
+    groups:
+      actions:
+        patterns: ['*']
