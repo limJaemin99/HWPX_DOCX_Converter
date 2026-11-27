@@ -34,7 +34,7 @@ final class DocxNumbering {
         FORMATS.put("LATIN_SMALL", "lowerLetter");
         FORMATS.put("HANGUL_SYLLABLE", "ganada");
         FORMATS.put("HANGUL_JAMO", "chosung");
-        FORMATS.put("IDEOGRAPH", "ideographTraditional");
+        FORMATS.put("IDEOGRAPH", "ideographDigital");
     }
 
     /** 한컴 번호 모양 → Word numFmt. 대응이 없으면 null. */

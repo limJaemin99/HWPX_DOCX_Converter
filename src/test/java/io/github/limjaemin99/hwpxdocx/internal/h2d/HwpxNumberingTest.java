@@ -153,6 +153,18 @@ public class HwpxNumberingTest {
     }
 
     @Test
+    public void ideographIsChineseDigit() throws Exception {
+        TestHwpx h = new TestHwpx();
+        h.put("Contents/header.xml", h.get("Contents/header.xml").replace("<hh:paraProperties",
+                "<hh:numberings itemCnt=\"1\"><hh:numbering id=\"1\" start=\"0\">" + head(1, "IDEOGRAPH", 1, "^1.")
+                        + "</hh:numbering></hh:numberings><hh:paraProperties"));
+        h.paraPrs(paraPr("0", heading("NONE", "0", 0)), paraPr("1", heading("NUMBER", "1", 0)));
+        convert(h.paragraphs(para("1", run("0", t("총강")))));
+        // 한컴 IDEOGRAPH는 一, 二, 三 (Word ideographTraditional은 甲, 乙, 丙)
+        assertContains(text("word/numbering.xml"), "<w:numFmt w:val=\"ideographDigital\"/>");
+    }
+
+    @Test
     public void levelText() {
         assertEquals("%1.%2.", DocxNumbering.levelText("^1.^2."));
         assertEquals("(%9)", DocxNumbering.levelText("(^10)"));

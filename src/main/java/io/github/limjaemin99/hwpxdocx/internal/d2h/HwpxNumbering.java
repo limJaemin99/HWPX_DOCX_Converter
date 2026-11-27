@@ -48,7 +48,7 @@ final class HwpxNumbering {
         FORMATS.put("koreanDigital2", "IDEOGRAPH");
         FORMATS.put("chineseCounting", "IDEOGRAPH");
         FORMATS.put("japaneseCounting", "IDEOGRAPH");
-        // HWPX → DOCX가 IDEOGRAPH를 이 값으로 쓰므로 되돌아올 때 맞춤
+        // 천간(甲, 乙, 丙)은 한컴 번호 모양에 없어 한자 숫자로 바꿈
         FORMATS.put("ideographTraditional", "IDEOGRAPH");
         FORMATS.put("none", "DIGIT");
 
