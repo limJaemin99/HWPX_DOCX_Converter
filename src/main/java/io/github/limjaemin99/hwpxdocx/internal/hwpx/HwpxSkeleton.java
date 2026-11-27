@@ -67,10 +67,27 @@ public final class HwpxSkeleton {
      */
     public static Map<String, byte[]> entries(String headerXml, String sectionXml, List<String[]> binItems,
                                               Map<String, byte[]> binData) {
-        Map<String, byte[]> m = entries();
-        m.put("Contents/content.hpf", utf8(contentHpf(binItems)));
+        return entries(headerXml, Collections.singletonList(sectionXml), binItems, binData);
+    }
+
+    /**
+     * 구역마다 Contents/sectionN.xml 하나. 한글도 구역을 이렇게 나눠 저장하고 header.xml secCnt에 구역 수를 적는다.
+     * {@code headerXml}의 secCnt는 부르는 쪽이 {@link #headerXml(String, int)}로 맞춘다.
+     */
+    public static Map<String, byte[]> entries(String headerXml, List<String> sectionXmls, List<String[]> binItems,
+                                              Map<String, byte[]> binData) {
+        Map<String, byte[]> m = new LinkedHashMap<>();
+        for (Map.Entry<String, byte[]> e : entries().entrySet()) {
+            if ("Contents/section0.xml".equals(e.getKey())) {
+                for (int i = 0; i < sectionXmls.size(); i++) {
+                    m.put("Contents/section" + i + ".xml", utf8(sectionXmls.get(i)));
+                }
+            } else {
+                m.put(e.getKey(), e.getValue());
+            }
+        }
+        m.put("Contents/content.hpf", utf8(contentHpf(binItems, sectionXmls.size())));
         m.put("Contents/header.xml", utf8(headerXml));
-        m.put("Contents/section0.xml", utf8(sectionXml));
         m.putAll(binData);
         return m;
     }
@@ -139,15 +156,27 @@ public final class HwpxSkeleton {
 
     /** @param binItems 그림 등 BinData 항목 {id, href, media-type} */
     public static String contentHpf(List<String[]> binItems) {
+        return contentHpf(binItems, 1);
+    }
+
+    /** @param sections 구역 수 (section0 ~ section{n-1}) */
+    public static String contentHpf(List<String[]> binItems, int sections) {
         StringBuilder items = new StringBuilder();
         for (String[] it : binItems) {
             items.append("<opf:item id=\"").append(it[0]).append("\" href=\"").append(it[1])
                     .append("\" media-type=\"").append(it[2]).append("\" isEmbeded=\"1\"/>");
         }
-        return contentHpfWith(items.toString());
+        StringBuilder secItems = new StringBuilder();
+        StringBuilder secRefs = new StringBuilder();
+        for (int i = 0; i < Math.max(1, sections); i++) {
+            secItems.append("<opf:item id=\"section").append(i).append("\" href=\"Contents/section").append(i)
+                    .append(".xml\" media-type=\"application/xml\"/>");
+            secRefs.append("<opf:itemref idref=\"section").append(i).append("\" linear=\"yes\"/>");
+        }
+        return contentHpfWith(items.toString(), secItems.toString(), secRefs.toString());
     }
 
-    private static String contentHpfWith(String binItems) {
+    private static String contentHpfWith(String binItems, String secItems, String secRefs) {
         return XML_DECL + "<opf:package" + NS_ALL + " version=\"\" unique-identifier=\"\" id=\"\">"
                 + "<opf:metadata><opf:title/><opf:language>ko</opf:language>"
                 + "<opf:meta name=\"creator\" content=\"text\"/>"
@@ -159,12 +188,12 @@ public final class HwpxSkeleton {
                 + "<opf:manifest>"
                 + "<opf:item id=\"header\" href=\"Contents/header.xml\" media-type=\"application/xml\"/>"
                 + binItems
-                + "<opf:item id=\"section0\" href=\"Contents/section0.xml\" media-type=\"application/xml\"/>"
+                + secItems
                 + "<opf:item id=\"settings\" href=\"settings.xml\" media-type=\"application/xml\"/>"
                 + "</opf:manifest>"
                 + "<opf:spine>"
                 + "<opf:itemref idref=\"header\" linear=\"yes\"/>"
-                + "<opf:itemref idref=\"section0\" linear=\"yes\"/>"
+                + secRefs
                 + "</opf:spine></opf:package>";
     }
 
@@ -176,7 +205,12 @@ public final class HwpxSkeleton {
 
     /** {@code refList}(hh:fontfaces ~ hh:styles)를 담은 header.xml. */
     public static String headerXml(String refList) {
-        return XML_DECL + "<hh:head" + NS_ALL + " version=\"1.4\" secCnt=\"1\">"
+        return headerXml(refList, 1);
+    }
+
+    /** @param sections 구역 수 (secCnt) */
+    public static String headerXml(String refList, int sections) {
+        return XML_DECL + "<hh:head" + NS_ALL + " version=\"1.4\" secCnt=\"" + Math.max(1, sections) + "\">"
                 + "<hh:beginNum page=\"1\" footnote=\"1\" endnote=\"1\" pic=\"1\" tbl=\"1\" equation=\"1\"/>"
                 + "<hh:refList>" + refList + "</hh:refList>"
                 + "<hh:compatibleDocument targetProgram=\"HWP201X\"><hh:layoutCompatibility/></hh:compatibleDocument>"
