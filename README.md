@@ -57,6 +57,21 @@ java -jar hwpx-docx-converter-<버전>.jar 입력.docx 출력.hwpx
 - 다른 JDK에서 시험: `build.ps1 -TestJavaHome <JDK 8 경로>,<JDK 17 경로>` / `JAVA_HOME=<JDK 경로> bash build.sh test`
 - 시험은 JUnit 없이 `src/test/java/.../testkit`의 작은 실행기로 돕니다
 
+## 개발 방식
+
+| 브랜치 | 용도 |
+|---|---|
+| `main` | 릴리스된 상태만. 합쳐지면 `v{버전}` 태그와 Release(jar + SHA-256)가 자동으로 만들어짐 |
+| `develop` | 다음 릴리스를 모으는 기본 브랜치 |
+| `feature/<이슈>-<이름>`, `fix/…`, `docs/…` | 이슈 하나 = 브랜치 하나 = PR 하나 |
+
+- 기능 PR은 develop으로 squash 해서 합칩니다. 합치려면 CI(JDK 17 빌드, JDK 8·17·21 시험)가 통과해야 합니다
+- develop → main 릴리스 PR은 모인 PR들의 확인 목록대로 시험한 뒤 합칩니다
+- 마일스톤이 개발 단계입니다: v0.1.0 프로젝트 틀 → v0.2.0 기본 변환 → v0.3.0 여러 구역·자동 번호·각주 → v0.4.0 줄 간격 보정 → v0.5.0 원본 보관(왕복 변환) → v1.0.0
+- 커밋과 PR 제목은 [Conventional Commits](https://www.conventionalcommits.org/ko/v1.0.0/) 형식(`feat:`, `fix:`, `docs:` …)으로 쓰고 요약은 한국어로 씁니다
+- 형식의 근거는 공개 규격입니다: HWPX는 OWPML(KS X 6101), DOCX는 ECMA-376(ISO/IEC 29500)
+- 변경 기록은 [CHANGELOG.md](CHANGELOG.md)에 있습니다
+
 ## 라이선스
 
 [Apache License 2.0](LICENSE) · Copyright 2026 Lim Jaemin

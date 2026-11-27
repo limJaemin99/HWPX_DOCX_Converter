@@ -1,0 +1,47 @@
+name: 버그
+description: 변환 결과가 틀리거나 오류가 날 때
+labels: [fix]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        업무 문서나 개인 정보가 든 문서는 올리지 마세요. 같은 현상이 나는 작은 문서를 새로 만들어 첨부해 주세요.
+  - type: dropdown
+    id: direction
+    attributes:
+      label: 방향
+      options:
+        - HWPX → DOCX
+        - DOCX → HWPX
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 라이브러리 버전
+      description: jar 이름의 버전 또는 커밋
+    validations:
+      required: true
+  - type: input
+    id: java
+    attributes:
+      label: Java 버전
+      placeholder: 예) 1.8.0_202, 17.0.12
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 방법
+      description: 실행한 명령이나 코드
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 결과
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 결과
+      description: 오류 메시지, 건너뛴 요소 목록, 달라진 부분
+    validations:
+      required: true
