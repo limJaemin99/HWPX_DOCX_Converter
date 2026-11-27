@@ -71,6 +71,51 @@ public final class HwpxToDocx implements Converter {
         DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), sectPr)), out);
     }
 
+    /** Word 책갈피 이름에는 빈칸을 쓸 수 없고 40자까지라 맞춤. */
+    static String bookmarkName(String name) {
+        String s = name.trim().replaceAll("\\s+", "_");
+        if (s.isEmpty()) {
+            s = "_";
+        }
+        return s.codePointCount(0, s.length()) > 40 ? s.substring(0, s.offsetByCodePoints(0, 40)) : s;
+    }
+
+    /**
+     * 링크 주소. 한컴은 Path 매개변수에 주소를, Command에 "주소;…" 꼴로 ':'를 '\:'로 적음.
+     * 문서 안 책갈피로 가는 링크는 '#'으로 시작한다고 봄.
+     */
+    static String linkTarget(Element fieldBegin) {
+        String path = null;
+        String command = null;
+        Element params = child(fieldBegin, NS_HP, "parameters");
+        for (Element sp : params == null ? new ArrayList<Element>() : children(params, NS_HP, "stringParam")) {
+            if ("Path".equals(sp.getAttribute("name"))) {
+                path = sp.getTextContent();
+            } else if ("Command".equals(sp.getAttribute("name"))) {
+                command = sp.getTextContent();
+            }
+        }
+        if (path != null && !path.trim().isEmpty()) {
+            return path.trim();
+        }
+        if (command == null) {
+            return null;
+        }
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < command.length(); i++) {
+            char ch = command.charAt(i);
+            if (ch == '\\' && i + 1 < command.length()) {
+                b.append(command.charAt(++i));
+            } else if (ch == ';') {
+                break;
+            } else {
+                b.append(ch);
+            }
+        }
+        String s = b.toString().trim();
+        return s.isEmpty() ? null : s;
+    }
+
     /** w:rPr에 위 첨자를 넣음. 스키마 순서상 w:vertAlign은 w:em 앞. */
     static String superscript(String rPr) {
         String s = rPr.replaceAll("<w:vertAlign [^>]*/>", "");
@@ -154,6 +199,12 @@ public final class HwpxToDocx implements Converter {
         private String noteRefTag;
         private boolean noteRefWritten;
 
+        // 한컴 필드(fieldBegin\"fieldEnd): 열린 필드 ID → 책갈피 ID("B"+번호) 또는 링크("H")
+        private final Map<String, String> openFields = new HashMap<String, String>();
+        private int nextBookmark;
+        // 열린 링크의 w:hyperlink 시작 태그. 필드가 문단을 넘으면 문단마다 다시 염
+        private String openLink;
+
         Run(HwpxPackage pkg, HwpxHeader header, DocxParts parts, ConvertStats stats) {
             this.pkg = pkg;
             this.header = header;
@@ -188,6 +239,9 @@ public final class HwpxToDocx implements Converter {
             }
             Pieces pieces = new Pieces(out, pPr.toString(), "1".equals(p.getAttribute("pageBreak")),
                     DocxProps.jc(header, paraPrId));
+            if (openLink != null) {
+                pieces.cur.append(openLink);
+            }
             for (Node n = p.getFirstChild(); n != null; n = n.getNextSibling()) {
                 if (!(n instanceof Element)) {
                     continue;
@@ -200,7 +254,22 @@ public final class HwpxToDocx implements Converter {
                     skip(e);
                 }
             }
-            pieces.flush(true);
+            flushPieces(pieces, true);
+        }
+
+        /** 링크가 열려 있으면 이 조각 끝에서 닫고 다음 조각에서 다시 연다 (Word 링크는 문단 안에만 둘 수 있음). */
+        private void flushPieces(Pieces pieces, boolean last) {
+            if (openLink != null) {
+                if (pieces.cur.toString().equals(openLink)) {
+                    pieces.cur.setLength(0);
+                } else {
+                    pieces.cur.append("</w:hyperlink>");
+                }
+            }
+            pieces.flush(last);
+            if (openLink != null) {
+                pieces.cur.append(openLink);
+            }
         }
 
         /** 한 문단에서 나온 w:p 조각들. 표가 끼면 그 앞까지를 문단 하나로 내보낸다. */
@@ -242,11 +311,12 @@ public final class HwpxToDocx implements Converter {
                 if (isHp(e, "t")) {
                     text(e, rPr, pieces.cur);
                 } else if (isHp(e, "tbl")) {
-                    if (pieces.pageBreak && pieces.cur.length() == 0) {
+                    boolean empty = pieces.cur.length() == 0 || pieces.cur.toString().equals(openLink);
+                    if (pieces.pageBreak && empty) {
                         // 표에는 쪽 나눔을 걸 수 없어 쪽 나눔만 담은 빈 문단을 표 앞에 둠
-                        pieces.flush(true);
-                    } else {
-                        pieces.flush(false);
+                        flushPieces(pieces, true);
+                    } else if (!empty) {
+                        flushPieces(pieces, false);
                     }
                     table(e, pieces.jc, pieces.out);
                 } else if (isHp(e, "pic")) {
@@ -279,6 +349,13 @@ public final class HwpxToDocx implements Converter {
                 }
             } else if (isHp(c, "footNote") || isHp(c, "endNote")) {
                 note(c, rPr, out);
+            } else if (isHp(c, "fieldBegin")) {
+                fieldBegin(c, out);
+            } else if (isHp(c, "fieldEnd")) {
+                fieldEnd(c, out);
+            } else if (isHp(c, "bookmark")) {
+                int id = nextBookmark++;
+                out.append(bookmarkStart(id, c.getAttribute("name"))).append("<w:bookmarkEnd w:id=\"").append(id).append("\"/>");
             } else if (isHp(c, "autoNum") && noteRefTag != null && !noteRefWritten
                     && ("FOOTNOTE".equals(c.getAttribute("numType")) || "ENDNOTE".equals(c.getAttribute("numType")))) {
                 out.append(noteRef(c, rPr));
@@ -293,6 +370,64 @@ public final class HwpxToDocx implements Converter {
             } else {
                 skip(c);
             }
+        }
+
+        /** 책갈피(BOOKMARK)·링크(HYPERLINK) 필드만 옮기고 나머지 필드는 건너뜀. */
+        private void fieldBegin(Element c, StringBuilder out) throws IOException {
+            String type = c.getAttribute("type");
+            String fid = c.getAttribute("id");
+            if ("BOOKMARK".equals(type)) {
+                int id = nextBookmark++;
+                openFields.put(fid, "B" + id);
+                out.append(bookmarkStart(id, c.getAttribute("name")));
+            } else if ("HYPERLINK".equals(type) && openLink == null) {
+                String target = linkTarget(c);
+                if (target == null) {
+                    stats.warn("링크 주소를 읽지 못해 글만 옮김");
+                    skip(c);
+                    return;
+                }
+                if (target.startsWith("#")) {
+                    openLink = "<w:hyperlink w:anchor=\"" + Xml.attr(bookmarkName(target.substring(1))) + "\">";
+                } else {
+                    openLink = "<w:hyperlink r:id=\"" + linkRel(target) + "\">";
+                }
+                openFields.put(fid, "H");
+                out.append(openLink);
+            } else {
+                skip(c);
+            }
+        }
+
+        private void fieldEnd(Element c, StringBuilder out) throws IOException {
+            String v = openFields.remove(c.getAttribute("beginIDRef"));
+            if (v == null) {
+                skip(c);
+            } else if ("H".equals(v)) {
+                out.append("</w:hyperlink>");
+                openLink = null;
+            } else {
+                out.append("<w:bookmarkEnd w:id=\"").append(v.substring(1)).append("\"/>");
+            }
+        }
+
+        private static String bookmarkStart(int id, String name) {
+            return "<w:bookmarkStart w:id=\"" + id + "\" w:name=\"" + Xml.attr(bookmarkName(name)) + "\"/>";
+        }
+
+        // 머리말·각주 안 링크는 그 파트의 관계 파일에 적음
+        private String linkRel(String url) {
+            if (partRels == null) {
+                return parts.hyperlink(url);
+            }
+            for (String[] r : partRels) {
+                if (r.length > 3 && r[2].equals(url)) {
+                    return r[0];
+                }
+            }
+            String rid = "rId" + (partRels.size() + 1);
+            partRels.add(new String[]{rid, "hyperlink", url, "External"});
+            return rid;
         }
 
         /** 한컴 각주·미주 → Word 각주 파트의 w:footnote·w:endnote와 본문의 참조. 각주 안 문단은 본문과 같이 옮긴다. */
