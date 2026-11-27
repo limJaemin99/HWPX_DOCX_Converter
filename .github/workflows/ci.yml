@@ -84,6 +84,12 @@ jobs:
         run: bash build.sh test
       - name: 공개 시험 문서 변환 결과 모으기
         run: bash build.sh regress src/test/resources/docs src/test/resources/baseline build/docx-out/regress
+      - name: (임시) 일부러 잘못 만든 DOCX
+        run: |
+          f=$(find build/docx-out -name '*.docx' | sort | head -1)
+          mkdir -p /tmp/broken && cd /tmp/broken && unzip -q "$GITHUB_WORKSPACE/$f"
+          sed -i 's#<w:body>#<w:body><w:p><w:pPr><w:jc w:val="bogus"/></w:pPr></w:p>#' word/document.xml
+          zip -q -r "$GITHUB_WORKSPACE/build/docx-out/broken.docx" .
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
