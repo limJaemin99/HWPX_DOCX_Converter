@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,7 +23,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.NS_W;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.attr;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.child;
 
-/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양)과 표를 옮긴다. 변환 한 번마다 새로 만든다. */
+/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양), 표, 그림을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class DocxToHwpx implements Converter {
 
     // Word 한 줄 높이 ÷ 글자 크기 (Word에서 잰 값). 배수 줄 간격을 한컴 비율로 바꿀 때 씀. 없는 글꼴은 평균값
@@ -43,7 +44,7 @@ public final class DocxToHwpx implements Converter {
     public void convert(InputStream in, OutputStream out, ConvertOptions options, ConvertStats stats)
             throws IOException {
         DocxPackage pkg = DocxPackage.read(in);
-        Run run = new Run(new DocxStyles(pkg), stats);
+        Run run = new Run(pkg, new DocxStyles(pkg), stats);
         NodeList bodies = pkg.parse(pkg.mainPart).getElementsByTagNameNS(NS_W, "body");
         List<String> paragraphs = new ArrayList<String>();
         if (bodies.getLength() > 0) {
@@ -62,7 +63,7 @@ public final class DocxToHwpx implements Converter {
             section.append(p);
         }
         HwpxSkeleton.write(HwpxSkeleton.entries(HwpxSkeleton.headerXml(run.refs.refList()),
-                HwpxSkeleton.sectionXml(section.toString())), out);
+                HwpxSkeleton.sectionXml(section.toString()), run.binItems, run.binData), out);
     }
 
     /** 문단 안의 한 조각: 글, 탭, 줄바꿈, 쪽 나눔, 쪽 번호. */
@@ -72,6 +73,7 @@ public final class DocxToHwpx implements Converter {
         static final int BREAK = 2;
         static final int PAGE_BREAK = 3;
         static final int AUTO_NUM = 4;
+        static final int OBJECT = 5;
 
         final Props props;
         final int kind;
@@ -95,16 +97,45 @@ public final class DocxToHwpx implements Converter {
         final StringBuilder instr = new StringBuilder();
     }
 
+    private static final String NS_WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+    private static final String NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    private static final String NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    private static final String NS_MC = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+
+    private static final Map<String, String> IMAGE_TYPES = new HashMap<String, String>();
+
+    static {
+        IMAGE_TYPES.put("png", "image/png");
+        IMAGE_TYPES.put("jpg", "image/jpeg");
+        IMAGE_TYPES.put("jpeg", "image/jpeg");
+        IMAGE_TYPES.put("gif", "image/gif");
+        IMAGE_TYPES.put("bmp", "image/bmp");
+        IMAGE_TYPES.put("tif", "image/tiff");
+        IMAGE_TYPES.put("tiff", "image/tiff");
+        IMAGE_TYPES.put("emf", "image/x-emf");
+        IMAGE_TYPES.put("wmf", "image/x-wmf");
+    }
+
     private static final class Run {
+        final DocxPackage pkg;
         final DocxStyles styles;
         final ConvertStats stats;
+        // 지금 읽는 파트(본문·머리말)와 그 관계. 그림은 이 관계로 찾음
+        String part;
+        Map<String, DocxPackage.Rel> rels;
+        final List<String[]> binItems = new ArrayList<String[]>();
+        final Map<String, byte[]> binData = new LinkedHashMap<String, byte[]>();
+        private final Map<String, String> binIdByTarget = new HashMap<String, String>();
         final HwpxRefs refs = new HwpxRefs();
         // 표·그림 등 개체 ID. 문서 안에서 겹치지 않으면 됨
         int nextObjectId = 1000;
 
-        Run(DocxStyles styles, ConvertStats stats) {
+        Run(DocxPackage pkg, DocxStyles styles, ConvertStats stats) throws IOException {
+            this.pkg = pkg;
             this.styles = styles;
             this.stats = stats;
+            this.part = pkg.mainPart;
+            this.rels = pkg.rels(part);
             // 바탕글(ID 0)은 기본 문단 스타일의 모양
             Props[] base = styles.paragraphBase(null);
             charId(base[1]);
@@ -435,6 +466,10 @@ public final class DocxToHwpx implements Converter {
                     case Item.BREAK:
                         t.append("<hp:lineBreak/>");
                         break;
+                    case Item.OBJECT:
+                        flushText(b, t);
+                        b.append(it.text);
+                        break;
                     default:
                         // 쪽 번호는 hp:t 밖의 컨트롤
                         flushText(b, t);
@@ -537,6 +572,16 @@ public final class DocxToHwpx implements Converter {
                 }
                 Element c = (Element) n;
                 String name = c.getLocalName();
+                if (NS_MC.equals(c.getNamespaceURI()) && "AlternateContent".equals(name)) {
+                    // Word 2010 이후 형식의 대체 내용: 그림이 들어 있으면 그것을 씀
+                    NodeList drawings = c.getElementsByTagNameNS(NS_W, "drawing");
+                    if (drawings.getLength() > 0) {
+                        picture((Element) drawings.item(0), rd, items);
+                    } else {
+                        skip(c);
+                    }
+                    continue;
+                }
                 if (!NS_W.equals(c.getNamespaceURI())) {
                     skip(c);
                     continue;
@@ -602,6 +647,9 @@ public final class DocxToHwpx implements Converter {
                             }
                         }
                         break;
+                    case "drawing":
+                        picture(c, rd, items);
+                        break;
                     case "rPr":
                     case "lastRenderedPageBreak":
                     case "softHyphen":
@@ -610,6 +658,146 @@ public final class DocxToHwpx implements Converter {
                     default:
                         skip(c);
                 }
+            }
+        }
+
+        // ---------- 그림 ----------
+
+        private void picture(Element drawing, Props rd, List<Item> items) throws IOException {
+            Element inline = childNs(drawing, NS_WP, "inline");
+            Element anchor = childNs(drawing, NS_WP, "anchor");
+            Element node = inline != null ? inline : anchor;
+            NodeList blips = node == null ? null : node.getElementsByTagNameNS(NS_A, "blip");
+            if (blips == null || blips.getLength() == 0) {
+                stats.warn("그림이 아닌 그리기 개체(도형·차트 등)는 아직 옮기지 않음");
+                skip(drawing);
+                return;
+            }
+            String rid = ((Element) blips.item(0)).getAttributeNS(NS_R, "embed");
+            DocxPackage.Rel rel = rels.get(rid);
+            byte[] data = rel == null || rel.external ? null : pkg.get(rel.target);
+            if (data == null) {
+                stats.warn("그림 파일을 찾지 못하거나 외부 연결 그림이라 뺌");
+                skip(drawing);
+                return;
+            }
+            String ext = rel.target.lastIndexOf('.') < 0 ? "" : rel.target.substring(rel.target.lastIndexOf('.') + 1)
+                    .toLowerCase(Locale.ROOT);
+            String media = IMAGE_TYPES.get(ext);
+            if (media == null) {
+                stats.warn("한컴이 읽지 못하는 그림 형식이라 뺌: " + rel.target);
+                skip(drawing);
+                return;
+            }
+            String binId = binIdByTarget.get(rel.target);
+            if (binId == null) {
+                binId = "image" + (binItems.size() + 1);
+                String href = "BinData/" + binId + "." + ext;
+                binItems.add(new String[]{binId, href, media});
+                binData.put(href, data);
+                binIdByTarget.put(rel.target, binId);
+            }
+            stats.picture();
+            Element extent = childNs(node, NS_WP, "extent");
+            // EMU ÷ 127 = HWPUNIT
+            int w = (int) Math.max(1, parseLong(extent == null ? null : extent.getAttribute("cx")) / 127);
+            int h = (int) Math.max(1, parseLong(extent == null ? null : extent.getAttribute("cy")) / 127);
+            int id = nextObjectId++;
+            String pos;
+            String wrap;
+            if (inline != null) {
+                pos = "<hp:pos treatAsChar=\"1\" affectLSpacing=\"0\" flowWithText=\"1\" allowOverlap=\"0\" holdAnchorAndSO=\"0\""
+                        + " vertRelTo=\"PARA\" horzRelTo=\"COLUMN\" vertAlign=\"TOP\" horzAlign=\"LEFT\" vertOffset=\"0\" horzOffset=\"0\"/>";
+                wrap = "TOP_AND_BOTTOM";
+            } else {
+                Element ph = childNs(anchor, NS_WP, "positionH");
+                Element pv = childNs(anchor, NS_WP, "positionV");
+                String hFrom = ph == null ? "column" : ph.getAttribute("relativeFrom");
+                String vFrom = pv == null ? "paragraph" : pv.getAttribute("relativeFrom");
+                // Word page는 용지 끝(한컴 PAPER), margin은 여백 안쪽(한컴 PAGE)
+                String hRel = "page".equals(hFrom) ? "PAPER" : "margin".equals(hFrom) ? "PAGE" : "COLUMN";
+                String vRel = "page".equals(vFrom) ? "PAPER" : "margin".equals(vFrom) ? "PAGE" : "PARA";
+                pos = "<hp:pos treatAsChar=\"0\" affectLSpacing=\"0\" flowWithText=\"" + ("PARA".equals(vRel) ? 1 : 0)
+                        + "\" allowOverlap=\"" + ("1".equals(anchor.getAttribute("allowOverlap")) ? 1 : 0)
+                        + "\" holdAnchorAndSO=\"0\" vertRelTo=\"" + vRel + "\" horzRelTo=\"" + hRel
+                        + "\" vertAlign=\"" + align(pv, "TOP") + "\" horzAlign=\"" + align(ph, "LEFT")
+                        + "\" vertOffset=\"" + offset(pv) + "\" horzOffset=\"" + offset(ph) + "\"/>";
+                if (childNs(anchor, NS_WP, "wrapNone") != null) {
+                    wrap = "1".equals(anchor.getAttribute("behindDoc")) ? "BEHIND_TEXT" : "IN_FRONT_OF_TEXT";
+                } else if (childNs(anchor, NS_WP, "wrapSquare") != null || childNs(anchor, NS_WP, "wrapTight") != null
+                        || childNs(anchor, NS_WP, "wrapThrough") != null) {
+                    wrap = "SQUARE";
+                } else {
+                    wrap = "TOP_AND_BOTTOM";
+                }
+            }
+            String xml = "<hp:pic id=\"" + id + "\" zOrder=\"" + id + "\" numberingType=\"PICTURE\" textWrap=\"" + wrap
+                    + "\" textFlow=\"BOTH_SIDES\" lock=\"0\" dropcapstyle=\"None\" href=\"\" groupLevel=\"0\" instid=\"" + id
+                    + "\" reverse=\"0\">"
+                    + "<hp:offset x=\"0\" y=\"0\"/><hp:orgSz width=\"" + w + "\" height=\"" + h + "\"/>"
+                    + "<hp:curSz width=\"" + w + "\" height=\"" + h + "\"/><hp:flip horizontal=\"0\" vertical=\"0\"/>"
+                    + "<hp:rotationInfo angle=\"0\" centerX=\"" + w / 2 + "\" centerY=\"" + h / 2 + "\" rotateimage=\"1\"/>"
+                    + "<hp:renderingInfo><hc:transMatrix e1=\"1\" e2=\"0\" e3=\"0\" e4=\"0\" e5=\"1\" e6=\"0\"/>"
+                    + "<hc:scaMatrix e1=\"1\" e2=\"0\" e3=\"0\" e4=\"0\" e5=\"1\" e6=\"0\"/>"
+                    + "<hc:rotMatrix e1=\"1\" e2=\"0\" e3=\"0\" e4=\"0\" e5=\"1\" e6=\"0\"/></hp:renderingInfo>"
+                    + "<hc:img binaryItemIDRef=\"" + binId + "\" bright=\"0\" contrast=\"0\" effect=\"REAL_PIC\" alpha=\"0\"/>"
+                    + "<hp:imgRect><hc:pt0 x=\"0\" y=\"0\"/><hc:pt1 x=\"" + w + "\" y=\"0\"/><hc:pt2 x=\"" + w + "\" y=\"" + h
+                    + "\"/><hc:pt3 x=\"0\" y=\"" + h + "\"/></hp:imgRect>"
+                    + "<hp:imgClip left=\"0\" right=\"" + w + "\" top=\"0\" bottom=\"" + h + "\"/>"
+                    + "<hp:inMargin left=\"0\" right=\"0\" top=\"0\" bottom=\"0\"/>"
+                    + "<hp:imgDim dimwidth=\"" + w + "\" dimheight=\"" + h + "\"/><hp:effects/>"
+                    + "<hp:sz width=\"" + w + "\" widthRelTo=\"ABSOLUTE\" height=\"" + h + "\" heightRelTo=\"ABSOLUTE\" protect=\"0\"/>"
+                    + pos + "<hp:outMargin left=\"0\" right=\"0\" top=\"0\" bottom=\"0\"/></hp:pic>";
+            items.add(new Item(rd, Item.OBJECT, xml));
+        }
+
+        private static Element childNs(Element parent, String ns, String local) {
+            if (parent == null) {
+                return null;
+            }
+            for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (n instanceof Element && local.equals(n.getLocalName()) && ns.equals(n.getNamespaceURI())) {
+                    return (Element) n;
+                }
+            }
+            return null;
+        }
+
+        private static String align(Element position, String def) {
+            Element a = position == null ? null : childNs(position, NS_WP, "align");
+            if (a == null) {
+                return def;
+            }
+            switch (a.getTextContent().trim()) {
+                case "center":
+                    return "CENTER";
+                case "right":
+                    return "RIGHT";
+                case "bottom":
+                    return "BOTTOM";
+                case "inside":
+                    return "INSIDE";
+                case "outside":
+                    return "OUTSIDE";
+                default:
+                    return def;
+            }
+        }
+
+        private static long offset(Element position) {
+            Element o = position == null ? null : childNs(position, NS_WP, "posOffset");
+            // 음수는 한컴처럼 부호 없는 32비트 값으로 적음
+            return o == null ? 0 : (parseLong(o.getTextContent()) / 127) & 0xFFFFFFFFL;
+        }
+
+        private static long parseLong(String s) {
+            if (s == null) {
+                return 0;
+            }
+            try {
+                return Long.parseLong(s.trim());
+            } catch (NumberFormatException e) {
+                return 0;
             }
         }
 
