@@ -1,0 +1,30 @@
+# 로컬 전용
+/CLAUDE.md
+/local/
+
+# 빌드 결과 (build.ps1·build.sh → build/, Maven·이클립스 → target/)
+/build/
+/target/
+/bin/
+
+# IDE
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# 문서 파일은 공개 시험 문서 폴더에만 둠
+*.hwpx
+*.docx
+!/src/test/resources/docs/**/*.hwpx
+!/src/test/resources/docs/**/*.docx
+
+# 시험 출력
+/test-output/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
