@@ -52,7 +52,7 @@ public final class DocxToHwpx implements Converter {
         sectPrs.add(lastSectPr);
         List<Integer> cuts = new ArrayList<Integer>(run.sectionCuts);
         cuts.add(paragraphs.size());
-        List<String> sections = new ArrayList<String>();
+        List<StringBuilder> bodiesOut = new ArrayList<StringBuilder>();
         Map<String, String> inherited = new HashMap<String, String>();
         int from = 0;
         for (int i = 0; i < sectPrs.size(); i++) {
@@ -62,15 +62,25 @@ public final class DocxToHwpx implements Converter {
                 paras.add("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
                         + "<hp:run charPrIDRef=\"0\"/></hp:p>");
             }
-            // 구역 설정과 머리말·꼬리말은 구역 첫 문단의 맨 앞 런에 둠
             String first = paras.get(0);
             int open = first.indexOf('>') + 1;
-            paras.set(0, first.substring(0, open) + run.section(sectPrs.get(i), i, inherited) + first.substring(open));
-            StringBuilder section = new StringBuilder();
+            boolean sameSection = i > 0 && run.continuesOnSamePage(sectPrs.get(i - 1), sectPrs.get(i), inherited);
+            // 구역 설정과 머리말·꼬리말은 구역 첫 문단의 맨 앞 런에 둠.
+            // 한컴 구역은 늘 새 쪽에서 시작하므로 같은 쪽에서 이어지는 구역은 나누지 않고 그 문단에 단 설정만 둠
+            String head = sameSection ? run.columnChange(sectPrs.get(i - 1), sectPrs.get(i))
+                    : run.section(sectPrs.get(i), i, inherited);
+            paras.set(0, first.substring(0, open) + head + first.substring(open));
+            StringBuilder section = sameSection ? bodiesOut.get(bodiesOut.size() - 1) : new StringBuilder();
             for (String p : paras) {
                 section.append(p);
             }
-            sections.add(HwpxSkeleton.sectionXml(section.toString()));
+            if (!sameSection) {
+                bodiesOut.add(section);
+            }
+        }
+        List<String> sections = new ArrayList<String>();
+        for (StringBuilder b : bodiesOut) {
+            sections.add(HwpxSkeleton.sectionXml(b.toString()));
         }
         String header = HwpxSkeleton.headerXml(run.refs.refList(run.numbering.refXml()), sections.size());
         HwpxSkeleton.write(HwpxSkeleton.entries(header, sections, run.binItems, run.binData), out);
@@ -876,8 +886,10 @@ public final class DocxToHwpx implements Converter {
             if (index > 0) {
                 // 한컴 구역은 늘 새 쪽에서 시작함
                 String type = attr(child(sectPr, "type"), "val");
-                if ("continuous".equals(type) || "nextColumn".equals(type)) {
-                    stats.warn("같은 쪽에서 이어지는 구역 나누기는 새 쪽에서 시작하는 구역으로 바꿈");
+                if ("continuous".equals(type)) {
+                    stats.warn("같은 쪽에서 이어지는 구역 나누기는 용지·여백·머리말이 앞 구역과 달라 새 쪽에서 시작하는 구역으로 바꿈");
+                } else if ("nextColumn".equals(type)) {
+                    stats.warn("다음 단에서 시작하는 구역 나누기는 새 쪽에서 시작하는 구역으로 바꿈");
                 } else if ("oddPage".equals(type) || "evenPage".equals(type)) {
                     stats.warn("홀수·짝수 쪽에서 시작하는 구역 나누기는 다음 쪽에서 시작하는 구역으로 바꿈");
                 }
@@ -899,9 +911,9 @@ public final class DocxToHwpx implements Converter {
                     + "\" left=\"" + parseInt(attr(pgMar, "left"), 1440) * 5
                     + "\" right=\"" + parseInt(attr(pgMar, "right"), 1440) * 5
                     + "\" top=\"" + header * 5 + "\" bottom=\"" + footer * 5 + "\"/></hp:pagePr>";
-            Element cols = child(sectPr, "cols");
-            int colCount = parseInt(attr(cols, "num"), 1);
-            int colGap = parseInt(attr(cols, "space"), colCount > 1 ? 720 : 0) * 5;
+            int[] cols = columns(sectPr);
+            int colCount = cols[0];
+            int colGap = cols[1];
             int start = parseInt(attr(child(sectPr, "pgNumType"), "start"), 0);
             Element titlePgEl = child(sectPr, "titlePg");
             boolean titlePg = titlePgEl != null && !"0".equals(attr(titlePgEl, "val")) && !"false".equals(attr(titlePgEl, "val"));
@@ -942,6 +954,68 @@ public final class DocxToHwpx implements Converter {
                 run += "<hp:run charPrIDRef=\"0\">" + ctrls + "</hp:run>";
             }
             return run;
+        }
+
+        /**
+         * '이어서' 구역 나누기이고 용지·여백·쪽 번호·머리말·꼬리말이 앞 구역과 같으면 true.
+         * 머리말·꼬리말을 적지 않은 구역은 앞 것을 이어 쓰므로 같은 것으로 봄.
+         */
+        boolean continuesOnSamePage(Element prev, Element cur, Map<String, String> inherited) {
+            if (prev == null || cur == null || !"continuous".equals(attr(child(cur, "type"), "val"))) {
+                return false;
+            }
+            if (!sameAttrs(child(prev, "pgSz"), child(cur, "pgSz"), "w", "h", "orient")
+                    || !sameAttrs(child(prev, "pgMar"), child(cur, "pgMar"),
+                    "top", "bottom", "left", "right", "header", "footer", "gutter")) {
+                return false;
+            }
+            if (attr(child(cur, "pgNumType"), "start") != null || child(cur, "titlePg") != null) {
+                return false;
+            }
+            for (Node n = cur.getFirstChild(); n != null; n = n.getNextSibling()) {
+                String local = n instanceof Element ? n.getLocalName() : null;
+                if ("headerReference".equals(local) || "footerReference".equals(local)) {
+                    Element ref = (Element) n;
+                    String what = local.startsWith("header") ? "header" : "footer";
+                    String type = attr(ref, "type") == null ? "default" : attr(ref, "type");
+                    DocxPackage.Rel rel = rels.get(ref.getAttributeNS(NS_R, "id"));
+                    String target = rel == null ? null : rel.target;
+                    if (target == null || !target.equals(inherited.get(what + ":" + type))) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static boolean sameAttrs(Element a, Element b, String... names) {
+            for (String name : names) {
+                String x = attr(a, name);
+                String y = attr(b, name);
+                if (x == null ? y != null : !x.equals(y)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /** 같은 구역 안에서 단 수·간격이 바뀌면 그 문단 첫 런에 둘 hp:colPr. 그대로면 빈 문자열. */
+        String columnChange(Element prev, Element cur) {
+            int[] before = columns(prev);
+            int[] after = columns(cur);
+            if (before[0] == after[0] && before[1] == after[1]) {
+                return "";
+            }
+            return "<hp:run charPrIDRef=\"0\"><hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\""
+                    + after[0] + "\" sameSz=\"1\" sameGap=\"" + after[1] + "\"/></hp:ctrl></hp:run>";
+        }
+
+        /** {단 수, 단 간격(HWPUNIT)}. Word 기본 단 간격은 720 twip. */
+        private static int[] columns(Element sectPr) {
+            Element cols = child(sectPr, "cols");
+            int count = Math.max(1, parseInt(attr(cols, "num"), 1));
+            int gap = parseInt(attr(cols, "space"), count > 1 ? 720 : 0) * 5;
+            return new int[]{count, gap};
         }
 
         private boolean evenAndOddHeaders() throws IOException {
