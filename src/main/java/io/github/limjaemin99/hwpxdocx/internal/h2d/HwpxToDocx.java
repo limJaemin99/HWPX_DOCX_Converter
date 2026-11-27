@@ -57,7 +57,7 @@ public final class HwpxToDocx implements Converter {
                 stats.warn("구역 XML 하나에 구역 설정이 둘 이상이면 처음 것만 씀");
             }
             sectPr = run.sectPr();
-            sectPr = run.splitColumns(sec, sectPr);
+            sectPr = run.splitSections(sec, sectPr);
             if (i < sections.size() - 1) {
                 endSection(sec, sectPr);
             }
@@ -161,11 +161,42 @@ public final class HwpxToDocx implements Converter {
         // 쪽 설정·머리말·꼬리말: 지금은 문서 전체에 첫 구역 것을 씀
         private Element secPr;
         private Element colPr;
-        // 구역 중간 단 설정(한글 다단 설정 나누기): {본문에서 그 문단이 시작하는 위치, 새 hp:colPr}
-        private final List<Object[]> columnSplits = new ArrayList<Object[]>();
+        // 구역 중간에서 단 설정·머리말·꼬리말이 바뀌는 문단마다 Word 구역을 나눔
+        private final List<Split> splits = new ArrayList<Split>();
         private StringBuilder sectionOut;
         private StringBuilder paragraphOut;
         private int paragraphStart;
+        private boolean paragraphNewPage;
+
+        /** Word 구역을 새로 시작할 문단. 바뀐 것만 담고 나머지는 앞 구역 것을 이어 씀. */
+        private static final class Split {
+            final int pos;
+            final boolean newPage;
+            Element colPr;
+            final Map<String, String> headers = new LinkedHashMap<String, String>();
+            final Map<String, String> footers = new LinkedHashMap<String, String>();
+            final Map<String, List<String[]>> headerRels = new HashMap<String, List<String[]>>();
+            final Map<String, List<String[]>> footerRels = new HashMap<String, List<String[]>>();
+
+            Split(int pos, boolean newPage) {
+                this.pos = pos;
+                this.newPage = newPage;
+            }
+        }
+
+        /** 지금 문단이 구역 본문의 둘째 이후 문단이면 그 자리의 나눔 지점, 아니면 null. */
+        private Split splitHere() {
+            if (atSectionStart || paragraphOut != sectionOut || headerFooterDepth > 0 || noteRefTag != null) {
+                return null;
+            }
+            Split last = splits.isEmpty() ? null : splits.get(splits.size() - 1);
+            if (last != null && last.pos == paragraphStart) {
+                return last;
+            }
+            Split s = new Split(paragraphStart, paragraphNewPage);
+            splits.add(s);
+            return s;
+        }
         int secPrCount;
         private Element pageNum;
         private final Map<String, String> headers = new LinkedHashMap<String, String>();
@@ -186,7 +217,7 @@ public final class HwpxToDocx implements Converter {
         /** 구역마다 쪽 설정·머리말을 새로 모은다. 머리말을 정하지 않은 구역은 Word에서 앞 구역 것을 이어 씀. */
         void beginSection(StringBuilder sectionOut) {
             this.sectionOut = sectionOut;
-            columnSplits.clear();
+            splits.clear();
             secPr = null;
             colPr = null;
             secPrCount = 0;
@@ -234,13 +265,16 @@ public final class HwpxToDocx implements Converter {
         void paragraph(Element p, StringBuilder out) throws IOException {
             StringBuilder savedOut = paragraphOut;
             int savedStart = paragraphStart;
+            boolean savedNewPage = paragraphNewPage;
             paragraphOut = out;
             paragraphStart = out.length();
+            paragraphNewPage = "1".equals(p.getAttribute("pageBreak"));
             try {
                 paragraphBody(p, out);
             } finally {
                 paragraphOut = savedOut;
                 paragraphStart = savedStart;
+                paragraphNewPage = savedNewPage;
             }
         }
 
@@ -367,10 +401,13 @@ public final class HwpxToDocx implements Converter {
             if (isHp(c, "colPr")) {
                 if (colPr == null) {
                     colPr = c;
-                } else if (!atSectionStart && paragraphOut == sectionOut && headerFooterDepth == 0 && noteRefTag == null) {
-                    columnSplits.add(new Object[]{paragraphStart, c});
                 } else {
-                    stats.warn("구역 첫 문단·표·머리말·각주 안의 추가 단 설정은 무시함");
+                    Split s = splitHere();
+                    if (s != null) {
+                        s.colPr = c;
+                    } else {
+                        stats.warn("구역 첫 문단·표·머리말·각주 안의 추가 단 설정은 무시함");
+                    }
                 }
             } else if (isHp(c, "header") || isHp(c, "footer")) {
                 headerFooter(c);
@@ -582,7 +619,14 @@ public final class HwpxToDocx implements Converter {
             String kind = "EVEN".equals(type) ? "even" : "default";
             Map<String, String> target = header ? headers : footers;
             if (target.containsKey(kind)) {
-                stats.warn("중간에 바뀌는 머리말·꼬리말은 처음 것만 옮김");
+                Split s = splitHere();
+                if (s == null) {
+                    stats.warn("구역 첫 문단·표 안에서 다시 나온 머리말·꼬리말은 처음 것만 옮김");
+                    return;
+                }
+                List<String[]> rels = new ArrayList<String[]>();
+                (header ? s.headers : s.footers).put(kind, headerFooterBody(c, rels));
+                (header ? s.headerRels : s.footerRels).put(kind, rels);
                 return;
             }
             if ("ODD".equals(type)) {
@@ -592,9 +636,14 @@ public final class HwpxToDocx implements Converter {
                     oddOnlyFooter = true;
                 }
             }
+            List<String[]> rels = new ArrayList<String[]>();
+            target.put(kind, headerFooterBody(c, rels));
+            (header ? headerRels : footerRels).put(kind, rels);
+        }
+
+        private String headerFooterBody(Element c, List<String[]> rels) throws IOException {
             StringBuilder b = new StringBuilder();
             Element sub = child(c, NS_HP, "subList");
-            List<String[]> rels = new ArrayList<String[]>();
             List<String[]> savedRels = partRels;
             partRels = rels;
             headerFooterDepth++;
@@ -608,8 +657,7 @@ public final class HwpxToDocx implements Converter {
                 headerFooterDepth--;
                 partRels = savedRels;
             }
-            target.put(kind, b.toString());
-            (header ? headerRels : footerRels).put(kind, rels);
+            return b.toString();
         }
 
         /** 마지막 w:sectPr. 머리말·꼬리말 파트도 여기서 만든다. */
@@ -686,26 +734,61 @@ public final class HwpxToDocx implements Converter {
         }
 
         /**
-         * 구역 중간 단 설정이 있으면 그 문단 앞에서 Word 구역을 나눈다. 앞 조각은 {@code sectPr}(머리말 참조 포함)에
-         * 그때까지의 단 수를 쓰고, 뒤 조각은 '이어서' 구역으로 쪽 설정만 적어 머리말·꼬리말은 앞 구역 것을 이어 쓰게 함.
-         * 돌려주는 값은 이 구역 마지막 조각의 구역 설정.
+         * 구역 중간에서 단 설정·머리말·꼬리말이 바뀌는 문단 앞마다 Word 구역을 나눈다. 첫 조각은 {@code sectPr}를 그대로 쓰고,
+         * 뒤 조각은 쪽 설정과 바뀐 머리말·꼬리말 참조만 적어 나머지는 앞 구역 것을 이어 쓰게 함(Word "이전과 같게").
+         * 쪽 나눔이 있는 문단이면 '다음 페이지부터', 아니면 '이어서' 구역 나누기. 돌려주는 값은 마지막 조각의 구역 설정.
          */
-        String splitColumns(StringBuilder sec, String sectPr) {
-            if (columnSplits.isEmpty()) {
+        String splitSections(StringBuilder sec, String sectPr) {
+            if (splits.isEmpty()) {
                 return sectPr;
             }
-            // 뒤에서부터 넣어야 앞쪽 위치가 밀리지 않음
-            for (int k = columnSplits.size() - 1; k >= 0; k--) {
-                Element before = k == 0 ? colPr : (Element) columnSplits.get(k - 1)[1];
-                String sp = k == 0 ? sectPr : continuousSectPr(before);
-                endSectionBefore(sec, (Integer) columnSplits.get(k)[0], sp);
+            List<String> after = new ArrayList<String>();
+            Element cols = colPr;
+            for (Split s : splits) {
+                if (s.colPr != null) {
+                    cols = s.colPr;
+                }
+                after.add(splitSectPr(s, cols));
             }
-            return continuousSectPr((Element) columnSplits.get(columnSplits.size() - 1)[1]);
+            // 뒤에서부터 넣어야 앞쪽 위치가 밀리지 않음
+            for (int k = splits.size() - 1; k >= 0; k--) {
+                endSectionBefore(sec, splits.get(k).pos, k == 0 ? sectPr : after.get(k - 1));
+            }
+            return after.get(after.size() - 1);
         }
 
-        private String continuousSectPr(Element cols) {
-            return "<w:sectPr><w:type w:val=\"continuous\"/>" + DocxProps.pageSetup(secPr, cols)
-                    .replaceAll("<w:pgNumType [^>]*/>", "") + "<w:docGrid w:linePitch=\"360\"/></w:sectPr>";
+        private String splitSectPr(Split s, Element cols) {
+            StringBuilder b = new StringBuilder("<w:sectPr>");
+            boolean changed = false;
+            for (int i = 0; i < 2; i++) {
+                boolean header = i == 0;
+                Map<String, String> m = header ? s.headers : s.footers;
+                for (Map.Entry<String, String> e : m.entrySet()) {
+                    String body = e.getValue() + pageNumFor(header, e.getKey());
+                    List<String[]> rels = relsOf(header ? s.headerRels : s.footerRels, e.getKey());
+                    b.append(reference(header ? "header" : "footer", e.getKey(),
+                            parts.headerFooter(header ? "hdr" : "ftr", body, rels)));
+                    changed = true;
+                }
+            }
+            if (!s.newPage) {
+                if (changed) {
+                    stats.warn("쪽 중간에서 바뀌는 머리말·꼬리말은 Word에서 다음 쪽부터 바뀜");
+                }
+                b.append("<w:type w:val=\"continuous\"/>");
+            }
+            b.append(DocxProps.pageSetup(secPr, cols).replaceAll("<w:pgNumType [^>]*/>", ""));
+            return b.append("<w:docGrid w:linePitch=\"360\"/></w:sectPr>").toString();
+        }
+
+        /** 쪽 번호를 그리는 쪽(머리말·꼬리말)의 기본·짝수 파트면 쪽 번호 문단, 아니면 빈 문자열. sectPr()과 같은 규칙. */
+        private String pageNumFor(boolean header, String kind) {
+            String num = pageNumParagraph();
+            if (num == null || "first".equals(kind)) {
+                return "";
+            }
+            boolean top = pageNum.getAttribute("pos").startsWith("TOP");
+            return top == header ? num : "";
         }
 
         private static List<String[]> relsOf(Map<String, List<String[]>> m, String kind) {

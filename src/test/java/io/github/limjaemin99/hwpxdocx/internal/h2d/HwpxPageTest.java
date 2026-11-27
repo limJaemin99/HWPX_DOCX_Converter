@@ -388,6 +388,78 @@ class HwpxPageTest {
         assertContains(sec, "colCount=\"2\"");
     }
 
+    private static String newPage(String para) {
+        return para.replace("pageBreak=\"0\"", "pageBreak=\"1\"");
+    }
+
+    /** sectPr 하나의 머리말·꼬리말 참조 → 파트 경로. 없으면 null. */
+    private static String refPart(Element sect, String what, String type, Map<String, String> rels) {
+        NodeList refs = sect.getElementsByTagNameNS(W, what + "Reference");
+        for (int i = 0; i < refs.getLength(); i++) {
+            Element r = (Element) refs.item(i);
+            if (type.equals(w(r, "type"))) {
+                return rels.get(r.getAttributeNS(R, "id"));
+            }
+        }
+        return null;
+    }
+
+    private Map<String, String> documentRels() throws Exception {
+        Map<String, String> m = new java.util.HashMap<String, String>();
+        NodeList l = xml("word/_rels/document.xml.rels").getElementsByTagNameNS(PR, "Relationship");
+        for (int i = 0; i < l.getLength(); i++) {
+            Element e = (Element) l.item(i);
+            m.put(e.getAttribute("Id"), "word/" + e.getAttribute("Target"));
+        }
+        return m;
+    }
+
+    @Test
+    void headerChangeOnNewPageStartsNextPageSection() throws Exception {
+        convert(new TestHwpx().paragraphs(
+                para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("제1장 총강")))))
+                        + run("0", headerCtrl("footer", "BOTH", para("0", run("0", t("대한민국헌법")))))),
+                para("0", run("0", t("제1조 ①대한민국은 민주공화국이다."))),
+                newPage(para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("제2장 국민의 권리와 의무"))))),
+                        run("0", t("제10조 모든 국민은 인간으로서의 존엄과 가치를 가진다."))))).toBytes());
+        NodeList sects = xml("word/document.xml").getElementsByTagNameNS(W, "sectPr");
+        assertEquals(2, sects.getLength());
+        Map<String, String> rels = documentRels();
+        Element a = (Element) sects.item(0);
+        Element b = (Element) sects.item(1);
+        assertEquals("제1장 총강", text(refPart(a, "header", "default", rels)));
+        assertEquals("대한민국헌법", text(refPart(a, "footer", "default", rels)));
+        assertEquals("제2장 국민의 권리와 의무", text(refPart(b, "header", "default", rels)));
+        // 꼬리말은 바뀌지 않았으므로 참조를 적지 않음 (이전과 같게)
+        assertEquals(null, refPart(b, "footer", "default", rels));
+        assertEquals(null, first(b, "type"));
+        assertEquals(0, result.getWarnings().size());
+    }
+
+    @Test
+    void headerChangeMidPageStartsContinuousSectionWithWarning() throws Exception {
+        convert(new TestHwpx().paragraphs(
+                para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("제1장 총강")))))),
+                para("0", run("0", t("제1조"))),
+                para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("제2장 국민의 권리와 의무"))))),
+                        run("0", t("제10조")))).toBytes());
+        Element last = sectPr();
+        assertEquals("continuous", w(first(last, "type"), "val"));
+        assertEquals("제2장 국민의 권리와 의무", text(refPart(last, "header", "default", documentRels())));
+        assertContains(result.getWarnings().toString(), "다음 쪽부터 바뀜");
+    }
+
+    @Test
+    void changedFooterKeepsPageNumber() throws Exception {
+        convert(new TestHwpx().paragraphs(
+                para("0", run("0", headerCtrl("footer", "BOTH", para("0", run("0", t("제1장")))))
+                        + run("0", ctrl("<hp:pageNum pos=\"BOTTOM_CENTER\" formatType=\"DIGIT\" sideChar=\"-\"/>"))),
+                newPage(para("0", run("0", headerCtrl("footer", "BOTH", para("0", run("0", t("제2장"))))),
+                        run("0", t("제10조"))))).toBytes());
+        String ftr = refPart(sectPr(), "footer", "default", documentRels());
+        assertEquals("제2장- 1 -", text(ftr));
+    }
+
     private static String elementText(Element e) {
         StringBuilder b = new StringBuilder();
         NodeList ts = e.getElementsByTagNameNS(W, "t");
