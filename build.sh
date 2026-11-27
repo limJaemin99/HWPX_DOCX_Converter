@@ -4,7 +4,11 @@
 #   bash build.sh          빌드 + 시험
 #   bash build.sh build    컴파일 → jar → 시험 클래스 컴파일 (JDK 9 이상)
 #   bash build.sh check    만들어 둔 jar·src/main에 네트워크 관련 API가 없는지 검사 (JDK 9 이상, jdeps)
-#   bash build.sh test     만들어 둔 jar로 시험만 (JDK 8 이상)
+#   bash build.sh test     만들어 둔 jar로 시험 + 공개 시험 문서 회귀 시험 (JDK 8 이상)
+#   bash build.sh regress <문서 폴더> <기준값 폴더> [결과 폴더]
+#                          다른 문서 폴더로 회귀 시험 (저장소 밖 문서도 됨)
+#   bash build.sh baseline [문서 폴더 기준값 폴더]
+#                          기준값을 지금 수치로 다시 씀 (기본은 공개 시험 문서)
 #   bash build.sh clean
 #
 # JAVA_HOME이 있으면 그 JDK를, 없으면 PATH의 java·javac를 씀. 결과는 build/
@@ -14,6 +18,7 @@ cd "$(dirname "$0")"
 NAME=hwpx-docx-converter
 MAIN=io.github.limjaemin99.hwpxdocx.cli.Main
 RUNNER=io.github.limjaemin99.hwpxdocx.testkit.TestRunner
+REGRESSION=io.github.limjaemin99.hwpxdocx.regress.Regression
 # parent가 없으므로 pom.xml의 첫 <version>이 프로젝트 버전
 VERSION=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' pom.xml | head -n 1)
 OUT=build
@@ -90,7 +95,17 @@ do_test() {
     exit 1
   fi
   "$(tool java)" -cp "$JAR$SEP$OUT/test-classes" "$RUNNER" "$OUT/test-classes"
+  "$(tool java)" -cp "$JAR$SEP$OUT/test-classes" "$REGRESSION" \
+    --docs "$OUT/test-classes/docs" --baseline "$OUT/test-classes/baseline"
   "$(tool java)" -jar "$JAR" --version
+}
+
+do_regress() {
+  if [ ! -d "$OUT/test-classes" ]; then
+    echo "시험 클래스가 없음 (먼저 bash build.sh build)" >&2
+    exit 1
+  fi
+  "$(tool java)" -cp "$JAR$SEP$OUT/test-classes" "$REGRESSION" "$@"
 }
 
 case "${1:-all}" in
@@ -98,6 +113,10 @@ case "${1:-all}" in
   build) do_build ;;
   check) do_check ;;
   test) do_test ;;
+  regress)
+    if [ $# -lt 3 ]; then echo "사용법: bash build.sh regress <문서 폴더> <기준값 폴더> [결과 폴더]" >&2; exit 2; fi
+    do_regress --docs "$2" --baseline "$3" ${4:+--out "$4"} ;;
+  baseline) do_regress --docs "${2:-src/test/resources/docs}" --baseline "${3:-src/test/resources/baseline}" --update ;;
   clean) do_clean ;;
-  *) echo "사용법: bash build.sh [all|build|check|test|clean]" >&2; exit 2 ;;
+  *) echo "사용법: bash build.sh [all|build|check|test|regress|baseline|clean]" >&2; exit 2 ;;
 esac
