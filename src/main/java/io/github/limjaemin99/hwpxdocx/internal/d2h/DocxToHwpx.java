@@ -121,6 +121,8 @@ public final class DocxToHwpx implements Converter {
     private static final String NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main";
     private static final String NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private static final String NS_MC = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+    private static final String NS_V = "urn:schemas-microsoft-com:vml";
+    private static final String NS_W10 = "urn:schemas-microsoft-com:office:word";
 
     private static final Map<String, String> IMAGE_TYPES = new HashMap<String, String>();
 
@@ -681,6 +683,9 @@ public final class DocxToHwpx implements Converter {
                     case "drawing":
                         picture(c, rd, items);
                         break;
+                    case "pict":
+                        vmlPicture(c, rd, items);
+                        break;
                     case "rPr":
                     case "lastRenderedPageBreak":
                     case "softHyphen":
@@ -840,55 +845,27 @@ public final class DocxToHwpx implements Converter {
                 skip(drawing);
                 return;
             }
-            String rid = ((Element) blips.item(0)).getAttributeNS(NS_R, "embed");
-            DocxPackage.Rel rel = rels.get(rid);
-            byte[] data = rel == null || rel.external ? null : pkg.get(rel.target);
-            if (data == null) {
-                stats.warn("그림 파일을 찾지 못하거나 외부 연결 그림이라 뺌");
-                skip(drawing);
-                return;
-            }
-            String ext = rel.target.lastIndexOf('.') < 0 ? "" : rel.target.substring(rel.target.lastIndexOf('.') + 1)
-                    .toLowerCase(Locale.ROOT);
-            String media = IMAGE_TYPES.get(ext);
-            if (media == null) {
-                stats.warn("한컴이 읽지 못하는 그림 형식이라 뺌: " + rel.target);
-                skip(drawing);
-                return;
-            }
-            String binId = binIdByTarget.get(rel.target);
+            String binId = binItem(((Element) blips.item(0)).getAttributeNS(NS_R, "embed"), drawing);
             if (binId == null) {
-                binId = "image" + (binItems.size() + 1);
-                String href = "BinData/" + binId + "." + ext;
-                binItems.add(new String[]{binId, href, media});
-                binData.put(href, data);
-                binIdByTarget.put(rel.target, binId);
+                return;
             }
             stats.picture();
             Element extent = childNs(node, NS_WP, "extent");
             // EMU ÷ 127 = HWPUNIT
             int w = (int) Math.max(1, parseLong(extent == null ? null : extent.getAttribute("cx")) / 127);
             int h = (int) Math.max(1, parseLong(extent == null ? null : extent.getAttribute("cy")) / 127);
-            int id = nextObjectId++;
             String pos;
             String wrap;
             if (inline != null) {
-                pos = "<hp:pos treatAsChar=\"1\" affectLSpacing=\"0\" flowWithText=\"1\" allowOverlap=\"0\" holdAnchorAndSO=\"0\""
-                        + " vertRelTo=\"PARA\" horzRelTo=\"COLUMN\" vertAlign=\"TOP\" horzAlign=\"LEFT\" vertOffset=\"0\" horzOffset=\"0\"/>";
+                pos = INLINE_POS;
                 wrap = "TOP_AND_BOTTOM";
             } else {
                 Element ph = childNs(anchor, NS_WP, "positionH");
                 Element pv = childNs(anchor, NS_WP, "positionV");
                 String hFrom = ph == null ? "column" : ph.getAttribute("relativeFrom");
                 String vFrom = pv == null ? "paragraph" : pv.getAttribute("relativeFrom");
-                // Word page는 용지 끝(한컴 PAPER), margin은 여백 안쪽(한컴 PAGE)
-                String hRel = "page".equals(hFrom) ? "PAPER" : "margin".equals(hFrom) ? "PAGE" : "COLUMN";
-                String vRel = "page".equals(vFrom) ? "PAPER" : "margin".equals(vFrom) ? "PAGE" : "PARA";
-                pos = "<hp:pos treatAsChar=\"0\" affectLSpacing=\"0\" flowWithText=\"" + ("PARA".equals(vRel) ? 1 : 0)
-                        + "\" allowOverlap=\"" + ("1".equals(anchor.getAttribute("allowOverlap")) ? 1 : 0)
-                        + "\" holdAnchorAndSO=\"0\" vertRelTo=\"" + vRel + "\" horzRelTo=\"" + hRel
-                        + "\" vertAlign=\"" + align(pv, "TOP") + "\" horzAlign=\"" + align(ph, "LEFT")
-                        + "\" vertOffset=\"" + offset(pv) + "\" horzOffset=\"" + offset(ph) + "\"/>";
+                pos = floatPos(relTo(hFrom, "COLUMN"), relTo(vFrom, "PARA"), alignOf(ph, "LEFT"), alignOf(pv, "TOP"),
+                        offset(ph), offset(pv), "1".equals(anchor.getAttribute("allowOverlap")));
                 if (childNs(anchor, NS_WP, "wrapNone") != null) {
                     wrap = "1".equals(anchor.getAttribute("behindDoc")) ? "BEHIND_TEXT" : "IN_FRONT_OF_TEXT";
                 } else if (childNs(anchor, NS_WP, "wrapSquare") != null || childNs(anchor, NS_WP, "wrapTight") != null
@@ -898,7 +875,109 @@ public final class DocxToHwpx implements Converter {
                     wrap = "TOP_AND_BOTTOM";
                 }
             }
-            String xml = "<hp:pic id=\"" + id + "\" zOrder=\"" + id + "\" numberingType=\"PICTURE\" textWrap=\"" + wrap
+            items.add(new Item(rd, Item.OBJECT, picXml(binId, w, h, pos, wrap)));
+        }
+
+        /** Word 2007 형식 그림: w:pict 안 v:shape + v:imagedata. 그림 워터마크도 이 형식으로 머리말에 들어감. */
+        private void vmlPicture(Element pict, Props rd, List<Item> items) throws IOException {
+            NodeList imgs = pict.getElementsByTagNameNS(NS_V, "imagedata");
+            if (imgs.getLength() == 0) {
+                stats.warn("그림이 아닌 그리기 개체(도형·차트 등)는 아직 옮기지 않음");
+                skip(pict);
+                return;
+            }
+            Element img = (Element) imgs.item(0);
+            String rid = img.getAttributeNS(NS_R, "id");
+            String binId = binItem(rid.isEmpty() ? img.getAttributeNS(NS_R, "pict") : rid, pict);
+            if (binId == null) {
+                return;
+            }
+            stats.picture();
+            if (!img.getAttribute("gain").isEmpty() || !img.getAttribute("blacklevel").isEmpty()) {
+                stats.warn("그림 흐리게(워터마크) 효과는 아직 옮기지 않음");
+            }
+            Element shape = (Element) img.getParentNode();
+            Map<String, String> st = vmlStyle(shape.getAttribute("style"));
+            int w = (int) Math.max(1, vmlLength(st.get("width")));
+            int h = (int) Math.max(1, vmlLength(st.get("height")));
+            String pos;
+            String wrap;
+            if ("absolute".equals(st.get("position"))) {
+                String hAlign = vmlAlign(st.get("mso-position-horizontal"), null);
+                String vAlign = vmlAlign(st.get("mso-position-vertical"), null);
+                // 정렬을 정했으면 오프셋은 쓰지 않음
+                long hOff = hAlign != null ? 0 : vmlLength(st.get("margin-left")) + vmlLength(st.get("left"));
+                long vOff = vAlign != null ? 0 : vmlLength(st.get("margin-top")) + vmlLength(st.get("top"));
+                String hRel = st.get("mso-position-horizontal-relative");
+                String vRel = st.get("mso-position-vertical-relative");
+                pos = floatPos(relTo(hRel, "COLUMN"), relTo(vRel, "PARA"), hAlign == null ? "LEFT" : hAlign,
+                        vAlign == null ? "TOP" : vAlign, hOff & 0xFFFFFFFFL, vOff & 0xFFFFFFFFL, false);
+                Element w10 = childNs(shape, NS_W10, "wrap");
+                String type = w10 == null ? "" : w10.getAttribute("type");
+                if ("square".equals(type) || "tight".equals(type) || "through".equals(type)) {
+                    wrap = "SQUARE";
+                } else if ("topAndBottom".equals(type)) {
+                    wrap = "TOP_AND_BOTTOM";
+                } else {
+                    String z = st.get("z-index");
+                    wrap = z != null && z.trim().startsWith("-") ? "BEHIND_TEXT" : "IN_FRONT_OF_TEXT";
+                }
+            } else {
+                pos = INLINE_POS;
+                wrap = "TOP_AND_BOTTOM";
+            }
+            items.add(new Item(rd, Item.OBJECT, picXml(binId, w, h, pos, wrap)));
+        }
+
+        /** 관계 ID의 그림을 BinData에 넣고 그 ID를 돌려준다. 못 쓰는 그림이면 경고·건너뜀을 남기고 null. */
+        private String binItem(String rid, Element source) throws IOException {
+            DocxPackage.Rel rel = rels.get(rid);
+            byte[] data = rel == null || rel.external ? null : pkg.get(rel.target);
+            if (data == null) {
+                stats.warn("그림 파일을 찾지 못하거나 외부 연결 그림이라 뺌");
+                skip(source);
+                return null;
+            }
+            String ext = rel.target.lastIndexOf('.') < 0 ? "" : rel.target.substring(rel.target.lastIndexOf('.') + 1)
+                    .toLowerCase(Locale.ROOT);
+            String media = IMAGE_TYPES.get(ext);
+            if (media == null) {
+                stats.warn("한컴이 읽지 못하는 그림 형식이라 뺌: " + rel.target);
+                skip(source);
+                return null;
+            }
+            String binId = binIdByTarget.get(rel.target);
+            if (binId == null) {
+                binId = "image" + (binItems.size() + 1);
+                String href = "BinData/" + binId + "." + ext;
+                binItems.add(new String[]{binId, href, media});
+                binData.put(href, data);
+                binIdByTarget.put(rel.target, binId);
+            }
+            return binId;
+        }
+
+        private static final String INLINE_POS = "<hp:pos treatAsChar=\"1\" affectLSpacing=\"0\" flowWithText=\"1\""
+                + " allowOverlap=\"0\" holdAnchorAndSO=\"0\" vertRelTo=\"PARA\" horzRelTo=\"COLUMN\" vertAlign=\"TOP\""
+                + " horzAlign=\"LEFT\" vertOffset=\"0\" horzOffset=\"0\"/>";
+
+        private static String floatPos(String hRel, String vRel, String hAlign, String vAlign, long hOff, long vOff,
+                                       boolean allowOverlap) {
+            return "<hp:pos treatAsChar=\"0\" affectLSpacing=\"0\" flowWithText=\"" + ("PARA".equals(vRel) ? 1 : 0)
+                    + "\" allowOverlap=\"" + (allowOverlap ? 1 : 0)
+                    + "\" holdAnchorAndSO=\"0\" vertRelTo=\"" + vRel + "\" horzRelTo=\"" + hRel
+                    + "\" vertAlign=\"" + vAlign + "\" horzAlign=\"" + hAlign
+                    + "\" vertOffset=\"" + vOff + "\" horzOffset=\"" + hOff + "\"/>";
+        }
+
+        // Word page는 용지 끝(한컴 PAPER), margin은 여백 안쪽(한컴 PAGE)
+        private static String relTo(String word, String def) {
+            return "page".equals(word) ? "PAPER" : "margin".equals(word) ? "PAGE" : def;
+        }
+
+        private String picXml(String binId, int w, int h, String pos, String wrap) {
+            int id = nextObjectId++;
+            return "<hp:pic id=\"" + id + "\" zOrder=\"" + id + "\" numberingType=\"PICTURE\" textWrap=\"" + wrap
                     + "\" textFlow=\"BOTH_SIDES\" lock=\"0\" dropcapstyle=\"None\" href=\"\" groupLevel=\"0\" instid=\"" + id
                     + "\" reverse=\"0\">"
                     + "<hp:offset x=\"0\" y=\"0\"/><hp:orgSz width=\"" + w + "\" height=\"" + h + "\"/>"
@@ -915,7 +994,93 @@ public final class DocxToHwpx implements Converter {
                     + "<hp:imgDim dimwidth=\"" + w + "\" dimheight=\"" + h + "\"/><hp:effects/>"
                     + "<hp:sz width=\"" + w + "\" widthRelTo=\"ABSOLUTE\" height=\"" + h + "\" heightRelTo=\"ABSOLUTE\" protect=\"0\"/>"
                     + pos + "<hp:outMargin left=\"0\" right=\"0\" top=\"0\" bottom=\"0\"/></hp:pic>";
-            items.add(new Item(rd, Item.OBJECT, xml));
+        }
+
+        /** VML style 속성("a:b;c:d") → 이름 → 값. */
+        static Map<String, String> vmlStyle(String style) {
+            Map<String, String> m = new HashMap<String, String>();
+            if (style == null) {
+                return m;
+            }
+            for (String part : style.split(";")) {
+                int c = part.indexOf(':');
+                if (c > 0) {
+                    m.put(part.substring(0, c).trim().toLowerCase(Locale.ROOT), part.substring(c + 1).trim());
+                }
+            }
+            return m;
+        }
+
+        /** VML 길이 → HWPUNIT(1/7200 인치). 단위가 없으면 px. 읽지 못하면 0. */
+        static long vmlLength(String v) {
+            if (v == null) {
+                return 0;
+            }
+            String s = v.trim().toLowerCase(Locale.ROOT);
+            int i = 0;
+            while (i < s.length() && (Character.isDigit(s.charAt(i)) || s.charAt(i) == '.' || s.charAt(i) == '-'
+                    || s.charAt(i) == '+')) {
+                i++;
+            }
+            double n;
+            try {
+                n = Double.parseDouble(s.substring(0, i));
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+            String unit = s.substring(i).trim();
+            double perUnit;
+            switch (unit) {
+                case "pt":
+                    perUnit = 100;
+                    break;
+                case "in":
+                    perUnit = 7200;
+                    break;
+                case "cm":
+                    perUnit = 7200 / 2.54;
+                    break;
+                case "mm":
+                    perUnit = 720 / 2.54;
+                    break;
+                case "pc":
+                    perUnit = 1200;
+                    break;
+                case "emu":
+                    perUnit = 1 / 127.0;
+                    break;
+                case "":
+                case "px":
+                    perUnit = 75;
+                    break;
+                default:
+                    return 0;
+            }
+            return Math.round(n * perUnit);
+        }
+
+        private static String vmlAlign(String v, String def) {
+            if (v == null) {
+                return def;
+            }
+            switch (v.trim()) {
+                case "left":
+                    return "LEFT";
+                case "center":
+                    return "CENTER";
+                case "right":
+                    return "RIGHT";
+                case "top":
+                    return "TOP";
+                case "bottom":
+                    return "BOTTOM";
+                case "inside":
+                    return "INSIDE";
+                case "outside":
+                    return "OUTSIDE";
+                default:
+                    return def;
+            }
         }
 
         private static Element childNs(Element parent, String ns, String local) {
@@ -930,7 +1095,7 @@ public final class DocxToHwpx implements Converter {
             return null;
         }
 
-        private static String align(Element position, String def) {
+        private static String alignOf(Element position, String def) {
             Element a = position == null ? null : childNs(position, NS_WP, "align");
             if (a == null) {
                 return def;
