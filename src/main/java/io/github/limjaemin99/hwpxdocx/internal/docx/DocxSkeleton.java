@@ -1,0 +1,188 @@
+package io.github.limjaemin99.hwpxdocx.internal.docx;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+/**
+ * 빈 문단 하나가 있는 최소 DOCX 패키지 (ECMA-376, ISO/IEC 29500).
+ * 기존 문서를 복사하지 않고 코드로 만든다. 작성자·회사 등 저장 정보는 비워 둔다.
+ */
+public final class DocxSkeleton {
+
+    static final String NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    static final String NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    static final String NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships";
+    static final String NS_CT = "http://schemas.openxmlformats.org/package/2006/content-types";
+    static final String NS_CP = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
+    static final String NS_DC = "http://purl.org/dc/elements/1.1/";
+    static final String NS_EP = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties";
+
+    private static final String REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+    private static final String CT_WML = "application/vnd.openxmlformats-officedocument.wordprocessingml.";
+
+    // ZIP 항목 시각을 고정해 같은 입력이면 같은 바이트가 나오게 함 (1980-01-01은 ZIP 최소값)
+    private static final long FIXED_TIME = 315532800000L + 12L * 3600 * 1000;
+
+    private static final String XML_DECL = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
+
+    private DocxSkeleton() {
+    }
+
+    /** 패키지 안 경로 → 내용. 순서가 ZIP 항목 순서다. */
+    public static Map<String, byte[]> entries() {
+        Map<String, byte[]> m = new LinkedHashMap<>();
+        m.put("[Content_Types].xml", utf8(contentTypesXml()));
+        m.put("_rels/.rels", utf8(packageRels()));
+        m.put("word/document.xml", utf8(documentXml()));
+        m.put("word/_rels/document.xml.rels", utf8(documentRels()));
+        m.put("word/styles.xml", utf8(stylesXml()));
+        m.put("word/settings.xml", utf8(settingsXml()));
+        m.put("docProps/core.xml", utf8(coreXml()));
+        m.put("docProps/app.xml", utf8(appXml()));
+        return m;
+    }
+
+    public static byte[] toBytes() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out);
+        return out.toByteArray();
+    }
+
+    /** {@code out}은 닫지 않는다. */
+    public static void write(OutputStream out) throws IOException {
+        ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
+        for (Map.Entry<String, byte[]> e : entries().entrySet()) {
+            ZipEntry z = new ZipEntry(e.getKey());
+            z.setTime(FIXED_TIME);
+            z.setMethod(ZipEntry.DEFLATED);
+            zip.putNextEntry(z);
+            zip.write(e.getValue());
+            zip.closeEntry();
+        }
+        zip.finish();
+    }
+
+    private static byte[] utf8(String s) {
+        return s.getBytes(StandardCharsets.UTF_8);
+    }
+
+    static String contentTypesXml() {
+        return XML_DECL + "<Types xmlns=\"" + NS_CT + "\">"
+                + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+                + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+                + override("/word/document.xml", CT_WML + "document.main+xml")
+                + override("/word/styles.xml", CT_WML + "styles+xml")
+                + override("/word/settings.xml", CT_WML + "settings+xml")
+                + override("/docProps/core.xml", "application/vnd.openxmlformats-package.core-properties+xml")
+                + override("/docProps/app.xml", "application/vnd.openxmlformats-officedocument.extended-properties+xml")
+                + "</Types>";
+    }
+
+    private static String override(String part, String type) {
+        return "<Override PartName=\"" + part + "\" ContentType=\"" + type + "\"/>";
+    }
+
+    static String packageRels() {
+        return XML_DECL + "<Relationships xmlns=\"" + NS_PKG_REL + "\">"
+                + rel("rId1", REL_TYPE + "officeDocument", "word/document.xml")
+                + rel("rId2", "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties",
+                        "docProps/core.xml")
+                + rel("rId3", REL_TYPE + "extended-properties", "docProps/app.xml")
+                + "</Relationships>";
+    }
+
+    static String documentRels() {
+        // Target은 이 rels 파일이 속한 word/ 기준 상대 경로
+        return XML_DECL + "<Relationships xmlns=\"" + NS_PKG_REL + "\">"
+                + rel("rId1", REL_TYPE + "styles", "styles.xml")
+                + rel("rId2", REL_TYPE + "settings", "settings.xml")
+                + "</Relationships>";
+    }
+
+    private static String rel(String id, String type, String target) {
+        return "<Relationship Id=\"" + id + "\" Type=\"" + type + "\" Target=\"" + target + "\"/>";
+    }
+
+    static String documentXml() {
+        // A4 세로(twip = 1/20 pt). 여백은 한국어판 Word 새 문서 기본값
+        return XML_DECL + "<w:document xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\">"
+                + "<w:body>"
+                + "<w:p/>"
+                + "<w:sectPr>"
+                + "<w:pgSz w:w=\"11906\" w:h=\"16838\"/>"
+                + "<w:pgMar w:top=\"1701\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\""
+                + " w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/>"
+                + "<w:cols w:space=\"425\"/>"
+                + "<w:docGrid w:linePitch=\"360\"/>"
+                + "</w:sectPr>"
+                + "</w:body></w:document>";
+    }
+
+    static String stylesXml() {
+        return XML_DECL + "<w:styles xmlns:w=\"" + NS_W + "\">"
+                + "<w:docDefaults>"
+                + "<w:rPrDefault><w:rPr>"
+                + "<w:rFonts w:ascii=\"함초롬바탕\" w:eastAsia=\"함초롬바탕\" w:hAnsi=\"함초롬바탕\" w:cs=\"함초롬바탕\"/>"
+                + "<w:kern w:val=\"2\"/>"
+                + "<w:sz w:val=\"20\"/><w:szCs w:val=\"20\"/>"
+                + "<w:lang w:val=\"en-US\" w:eastAsia=\"ko-KR\" w:bidi=\"ar-SA\"/>"
+                + "</w:rPr></w:rPrDefault>"
+                + "<w:pPrDefault><w:pPr>"
+                + "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>"
+                + "</w:pPr></w:pPrDefault>"
+                + "</w:docDefaults>"
+                + "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\">"
+                + "<w:name w:val=\"Normal\"/><w:qFormat/>"
+                + "<w:pPr><w:widowControl w:val=\"0\"/><w:wordWrap w:val=\"0\"/><w:jc w:val=\"both\"/></w:pPr>"
+                + "</w:style>"
+                + "<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\">"
+                + "<w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/>"
+                + "<w:unhideWhenUsed/>"
+                + "</w:style>"
+                + "<w:style w:type=\"table\" w:default=\"1\" w:styleId=\"TableNormal\">"
+                + "<w:name w:val=\"Normal Table\"/><w:uiPriority w:val=\"99\"/><w:semiHidden/><w:unhideWhenUsed/>"
+                + "<w:tblPr><w:tblInd w:w=\"0\" w:type=\"dxa\"/><w:tblCellMar>"
+                + "<w:top w:w=\"0\" w:type=\"dxa\"/><w:left w:w=\"108\" w:type=\"dxa\"/>"
+                + "<w:bottom w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"108\" w:type=\"dxa\"/>"
+                + "</w:tblCellMar></w:tblPr>"
+                + "</w:style>"
+                + "<w:style w:type=\"numbering\" w:default=\"1\" w:styleId=\"NoList\">"
+                + "<w:name w:val=\"No List\"/><w:uiPriority w:val=\"99\"/><w:semiHidden/><w:unhideWhenUsed/>"
+                + "</w:style>"
+                + "</w:styles>";
+    }
+
+    static String settingsXml() {
+        return XML_DECL + "<w:settings xmlns:w=\"" + NS_W + "\">"
+                + "<w:zoom w:percent=\"100\"/>"
+                + "<w:defaultTabStop w:val=\"800\"/>"
+                + "<w:characterSpacingControl w:val=\"compressPunctuation\"/>"
+                + "<w:compat>"
+                // 15 = Word 2013 이후 배치 방식. 낮추면 Word가 호환 모드로 열어 줄 배치가 달라짐
+                + "<w:compatSetting w:name=\"compatibilityMode\" w:uri=\"http://schemas.microsoft.com/office/word\""
+                + " w:val=\"15\"/>"
+                + "</w:compat>"
+                + "</w:settings>";
+    }
+
+    static String coreXml() {
+        return XML_DECL + "<cp:coreProperties xmlns:cp=\"" + NS_CP + "\" xmlns:dc=\"" + NS_DC + "\""
+                + " xmlns:dcterms=\"http://purl.org/dc/terms/\""
+                + " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
+                + "<dc:title></dc:title><dc:creator></dc:creator><cp:lastModifiedBy></cp:lastModifiedBy>"
+                + "</cp:coreProperties>";
+    }
+
+    static String appXml() {
+        return XML_DECL + "<Properties xmlns=\"" + NS_EP + "\""
+                + " xmlns:vt=\"http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes\">"
+                + "<DocSecurity>0</DocSecurity><Company></Company>"
+                + "</Properties>";
+    }
+}
