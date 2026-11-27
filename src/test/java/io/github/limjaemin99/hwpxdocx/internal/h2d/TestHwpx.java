@@ -42,6 +42,55 @@ final class TestHwpx {
         return replaceBlock("Contents/header.xml", "charProperties", String.join("", charPr), charPr.length);
     }
 
+    TestHwpx borderFills(String... borderFill) {
+        return replaceBlock("Contents/header.xml", "borderFills", String.join("", borderFill), borderFill.length);
+    }
+
+    /** 네 변 같은 선(굵기 "0.12 mm" 등)과 채우기 색(null이면 없음). */
+    static String borderFill(String id, String type, String width, String fill) {
+        StringBuilder b = new StringBuilder("<hh:borderFill id=\"" + id + "\" threeD=\"0\" shadow=\"0\""
+                + " centerLine=\"NONE\" breakCellSeparateLine=\"0\">"
+                + "<hh:slash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>"
+                + "<hh:backSlash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>");
+        for (String side : new String[]{"leftBorder", "rightBorder", "topBorder", "bottomBorder"}) {
+            b.append("<hh:").append(side).append(" type=\"").append(type).append("\" width=\"").append(width)
+                    .append("\" color=\"#000000\"/>");
+        }
+        b.append("<hh:diagonal type=\"SOLID\" width=\"0.1 mm\" color=\"#000000\"/>");
+        if (fill != null) {
+            b.append("<hc:fillBrush><hc:winBrush faceColor=\"").append(fill)
+                    .append("\" hatchColor=\"#999999\" alpha=\"0\"/></hc:fillBrush>");
+        }
+        return b.append("</hh:borderFill>").toString();
+    }
+
+    static String tbl(int rows, int cols, String attrs, String... trs) {
+        return "<hp:tbl id=\"1\" zOrder=\"0\" numberingType=\"TABLE\" textWrap=\"TOP_AND_BOTTOM\" textFlow=\"BOTH_SIDES\""
+                + " lock=\"0\" dropcapstyle=\"None\" pageBreak=\"CELL\" rowCnt=\"" + rows + "\" colCnt=\"" + cols + "\""
+                + " cellSpacing=\"0\" noAdjust=\"0\" " + attrs + ">"
+                + "<hp:sz width=\"40000\" widthRelTo=\"ABSOLUTE\" height=\"5000\" heightRelTo=\"ABSOLUTE\" protect=\"0\"/>"
+                + "<hp:pos treatAsChar=\"1\" affectLSpacing=\"0\" flowWithText=\"1\" allowOverlap=\"0\" holdAnchorAndSO=\"0\""
+                + " vertRelTo=\"PARA\" horzRelTo=\"COLUMN\" vertAlign=\"TOP\" horzAlign=\"LEFT\" vertOffset=\"0\" horzOffset=\"0\"/>"
+                + "<hp:outMargin left=\"283\" right=\"283\" top=\"283\" bottom=\"283\"/>"
+                + "<hp:inMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/>"
+                + String.join("", trs) + "</hp:tbl>";
+    }
+
+    static String tr(String... tcs) {
+        return "<hp:tr>" + String.join("", tcs) + "</hp:tr>";
+    }
+
+    static String tc(int row, int col, int rowSpan, int colSpan, int width, String borderFill, String text) {
+        return "<hp:tc name=\"\" header=\"" + (row == 0 ? 1 : 0) + "\" hasMargin=\"0\" protect=\"0\" editable=\"0\""
+                + " dirty=\"0\" borderFillIDRef=\"" + borderFill + "\">"
+                + "<hp:subList id=\"\" textDirection=\"HORIZONTAL\" lineWrap=\"BREAK\" vertAlign=\"CENTER\">"
+                + para("0", run("0", t(text))) + "</hp:subList>"
+                + "<hp:cellAddr colAddr=\"" + col + "\" rowAddr=\"" + row + "\"/>"
+                + "<hp:cellSpan colSpan=\"" + colSpan + "\" rowSpan=\"" + rowSpan + "\"/>"
+                + "<hp:cellSz width=\"" + width + "\" height=\"" + (1000 * rowSpan) + "\"/>"
+                + "<hp:cellMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/></hp:tc>";
+    }
+
     TestHwpx paraPrs(String... paraPr) {
         return replaceBlock("Contents/header.xml", "paraProperties", String.join("", paraPr), paraPr.length);
     }

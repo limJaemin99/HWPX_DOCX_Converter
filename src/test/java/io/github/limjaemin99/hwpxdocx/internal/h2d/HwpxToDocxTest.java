@@ -252,12 +252,12 @@ class HwpxToDocxTest {
     @Test
     void unsupportedElementsAreCounted() throws Exception {
         byte[] hwpx = new TestHwpx().paragraphs(
-                para("0", run("0", "<hp:tbl/>"), run("0", t("표 뒤 글"))),
-                para("0", run("0", "<hp:tbl/><hp:pic/>"))).toBytes();
+                para("0", run("0", "<hp:rect/>"), run("0", t("도형 뒤 글"))),
+                para("0", run("0", "<hp:rect/><hp:pic/>"))).toBytes();
         convert(hwpx);
-        assertEquals(Integer.valueOf(2), result.getSkipped().get("hp:tbl"));
+        assertEquals(Integer.valueOf(2), result.getSkipped().get("hp:rect"));
         assertEquals(Integer.valueOf(1), result.getSkipped().get("hp:pic"));
-        assertEquals("표 뒤 글", text(p(1)));
+        assertEquals("도형 뒤 글", text(p(1)));
         assertThrows(ConvertException.class, () -> convert(hwpx, ConvertOptions.builder().failOnUnsupported(true).build()));
     }
 
