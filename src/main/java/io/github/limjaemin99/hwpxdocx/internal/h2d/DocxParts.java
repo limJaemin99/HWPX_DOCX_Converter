@@ -61,9 +61,30 @@ final class DocxParts {
         return rid;
     }
 
+    private boolean evenAndOddHeaders;
+    private int nextHeader = 1;
+    private int nextFooter = 1;
+
+    /** 머리말(hdr)·꼬리말(ftr) 파트를 더하고 관계 ID를 돌려준다. */
+    String headerFooter(String tag, String body) {
+        boolean header = "hdr".equals(tag);
+        String name = (header ? "header" + nextHeader++ : "footer" + nextFooter++) + ".xml";
+        parts.put("word/" + name, utf8(DocxSkeleton.headerFooterXml(tag, body)));
+        overrides.put("/word/" + name, "application/vnd.openxmlformats-officedocument.wordprocessingml."
+                + (header ? "header" : "footer") + "+xml");
+        String rid = "rId" + nextRel++;
+        rels.add(new String[]{rid, header ? "header" : "footer", name});
+        return rid;
+    }
+
+    void evenAndOddHeaders() {
+        evenAndOddHeaders = true;
+    }
+
     Map<String, byte[]> entries(String documentXml) {
         Map<String, byte[]> m = DocxSkeleton.entries();
         m.put("[Content_Types].xml", utf8(DocxSkeleton.contentTypesXml(defaults, overrides)));
+        m.put("word/settings.xml", utf8(DocxSkeleton.settingsXml(evenAndOddHeaders)));
         m.put("word/document.xml", utf8(documentXml));
         m.put("word/_rels/document.xml.rels", utf8(DocxSkeleton.documentRels(rels)));
         m.putAll(parts);

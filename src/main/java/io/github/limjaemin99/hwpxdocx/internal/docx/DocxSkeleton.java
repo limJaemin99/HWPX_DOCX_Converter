@@ -151,20 +151,30 @@ public final class DocxSkeleton {
         return documentXml("<w:p/>");
     }
 
+    // A4 세로(twip = 1/20 pt). 여백은 한국어판 Word 새 문서 기본값
+    static final String DEFAULT_SECT_PR = "<w:sectPr>"
+            + "<w:pgSz w:w=\"11906\" w:h=\"16838\"/>"
+            + "<w:pgMar w:top=\"1701\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\""
+            + " w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/>"
+            + "<w:cols w:space=\"425\"/>"
+            + "<w:docGrid w:linePitch=\"360\"/>"
+            + "</w:sectPr>";
+
     /** {@code body}(w:p·w:tbl 나열) 뒤에 기본 구역 설정을 붙인 document.xml. */
     public static String documentXml(String body) {
-        // A4 세로(twip = 1/20 pt). 여백은 한국어판 Word 새 문서 기본값
+        return documentXml(body, DEFAULT_SECT_PR);
+    }
+
+    /** {@code body} 뒤에 마지막 구역 설정 {@code sectPr}(w:sectPr 요소 전체)을 붙인 document.xml. */
+    public static String documentXml(String body, String sectPr) {
         return XML_DECL + "<w:document xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\"" + NS_DRAWING + ">"
-                + "<w:body>"
-                + body
-                + "<w:sectPr>"
-                + "<w:pgSz w:w=\"11906\" w:h=\"16838\"/>"
-                + "<w:pgMar w:top=\"1701\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\""
-                + " w:header=\"851\" w:footer=\"992\" w:gutter=\"0\"/>"
-                + "<w:cols w:space=\"425\"/>"
-                + "<w:docGrid w:linePitch=\"360\"/>"
-                + "</w:sectPr>"
-                + "</w:body></w:document>";
+                + "<w:body>" + body + sectPr + "</w:body></w:document>";
+    }
+
+    /** 머리말(tag = hdr)·꼬리말(tag = ftr) 파트. {@code body}가 비면 빈 문단 하나. */
+    public static String headerFooterXml(String tag, String body) {
+        return XML_DECL + "<w:" + tag + " xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\"" + NS_DRAWING + ">"
+                + (body.isEmpty() ? "<w:p/>" : body) + "</w:" + tag + ">";
     }
 
     static String stylesXml() {
@@ -202,9 +212,16 @@ public final class DocxSkeleton {
     }
 
     static String settingsXml() {
+        return settingsXml(false);
+    }
+
+    /** @param evenAndOddHeaders 홀수·짝수 쪽 머리말을 따로 쓸 때 */
+    public static String settingsXml(boolean evenAndOddHeaders) {
         return XML_DECL + "<w:settings xmlns:w=\"" + NS_W + "\">"
                 + "<w:zoom w:percent=\"100\"/>"
                 + "<w:defaultTabStop w:val=\"800\"/>"
+                // 스키마 순서상 defaultTabStop 뒤, characterSpacingControl 앞
+                + (evenAndOddHeaders ? "<w:evenAndOddHeaders/>" : "")
                 + "<w:characterSpacingControl w:val=\"compressPunctuation\"/>"
                 + "<w:compat>"
                 // 15 = Word 2013 이후 배치 방식. 낮추면 Word가 호환 모드로 열어 줄 배치가 달라짐
