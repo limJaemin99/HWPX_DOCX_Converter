@@ -37,6 +37,11 @@ final class DocxNumbering {
         FORMATS.put("IDEOGRAPH", "ideographTraditional");
     }
 
+    /** 한컴 번호 모양 → Word numFmt. 대응이 없으면 null. */
+    static String format(String hwpx) {
+        return FORMATS.get(hwpx);
+    }
+
     private final HwpxHeader header;
     private final ConvertStats stats;
     // "N:id" 또는 "B:id" → numId. 순서대로 abstractNum을 쓴다

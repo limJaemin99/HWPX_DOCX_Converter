@@ -186,6 +186,12 @@ public final class DocxSkeleton {
                 + (body.isEmpty() ? "<w:p/>" : body) + "</w:" + tag + ">";
     }
 
+    /** word/footnotes.xml·endnotes.xml. {@code tag}는 footnotes 또는 endnotes, {@code body}는 각주 요소 나열. */
+    public static String notesXml(String tag, String body) {
+        return XML_DECL + "<w:" + tag + " xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\"" + NS_DRAWING + ">"
+                + body + "</w:" + tag + ">";
+    }
+
     static String stylesXml() {
         return XML_DECL + "<w:styles xmlns:w=\"" + NS_W + "\">"
                 + "<w:docDefaults>"
@@ -226,12 +232,18 @@ public final class DocxSkeleton {
 
     /** @param evenAndOddHeaders 홀수·짝수 쪽 머리말을 따로 쓸 때 */
     public static String settingsXml(boolean evenAndOddHeaders) {
+        return settingsXml(evenAndOddHeaders, "");
+    }
+
+    /** @param notes w:footnotePr·w:endnotePr (각주 구분선 등 특수 각주 ID). 없으면 빈 문자열 */
+    public static String settingsXml(boolean evenAndOddHeaders, String notes) {
         return XML_DECL + "<w:settings xmlns:w=\"" + NS_W + "\">"
                 + "<w:zoom w:percent=\"100\"/>"
                 + "<w:defaultTabStop w:val=\"800\"/>"
                 // 스키마 순서상 defaultTabStop 뒤, characterSpacingControl 앞
                 + (evenAndOddHeaders ? "<w:evenAndOddHeaders/>" : "")
                 + "<w:characterSpacingControl w:val=\"compressPunctuation\"/>"
+                + notes
                 + "<w:compat>"
                 // 15 = Word 2013 이후 배치 방식. 낮추면 Word가 호환 모드로 열어 줄 배치가 달라짐
                 + "<w:compatSetting w:name=\"compatibilityMode\" w:uri=\"http://schemas.microsoft.com/office/word\""
