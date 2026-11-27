@@ -48,6 +48,7 @@ public final class SafeXml {
     private static final String DISALLOW_DOCTYPE = "http://apache.org/xml/features/disallow-doctype-decl";
     private static final String EXTERNAL_GENERAL = "http://xml.org/sax/features/external-general-entities";
     private static final String EXTERNAL_PARAMETER = "http://xml.org/sax/features/external-parameter-entities";
+    static final String DEFER_NODE_EXPANSION = "http://apache.org/xml/features/dom/defer-node-expansion";
     private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
 
     private SafeXml() {
@@ -97,6 +98,12 @@ public final class SafeXml {
             f.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         } catch (ParserConfigurationException | RuntimeException e) {
             throw unsupported(f, e);
+        }
+        try {
+            // 변환은 노드를 전부 훑으므로 지연 확장이면 내부 배열과 노드를 두 벌 들고 있게 됨.
+            // 보안 설정이 아니라서 없는 구현이면 그대로 씀
+            f.setFeature(DEFER_NODE_EXPANSION, false);
+        } catch (ParserConfigurationException | RuntimeException ignored) {
         }
     }
 
