@@ -33,6 +33,7 @@ try (InputStream in = Files.newInputStream(Paths.get("in.hwpx"));
 - 입력·출력은 스트림이고, 라이브러리가 스트림을 닫지 않습니다
 - 정적 상태가 없어 여러 스레드에서 동시에 불러도 됩니다
 - 옮길 수 없는 요소는 기본으로 건너뛰고 결과에 남깁니다. `ConvertOptions.builder().failOnUnsupported(true)`로 하면 그 자리에서 멈춥니다
+- 깨진 문서는 `ConvertException`(`IOException` 하위)으로 알립니다. 압축을 푼 크기(1 GiB), 패키지 항목 수(10,000개), 표 크기(열 10,000개, 칸 4,000,000개)에 상한이 있어 비정상 문서가 메모리를 다 쓰지 않습니다. 시험 묶음이 속성값을 바꾸거나 XML을 자른 문서 1,000개로 이를 확인합니다
 
 명령줄 도구도 jar에 들어 있습니다. 확장자로 방향을 정합니다.
 

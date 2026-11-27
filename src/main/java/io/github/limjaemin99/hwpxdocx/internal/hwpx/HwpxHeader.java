@@ -114,7 +114,7 @@ public final class HwpxHeader {
 
     /**
      * 정수 속성. 한컴은 음수를 부호 없는 32비트 값(예: 4294966296)으로 적기도 해서 되돌림.
-     * 없거나 숫자가 아니면 {@code def}.
+     * 없거나 숫자가 아니거나 int 범위 밖이면 {@code def}.
      */
     public static int intAttr(Element e, String name, int def) {
         if (e == null || !e.hasAttribute(name)) {
@@ -125,7 +125,7 @@ public final class HwpxHeader {
             if (v >= (1L << 31) && v < (1L << 32)) {
                 v -= 1L << 32;
             }
-            return (int) v;
+            return v < Integer.MIN_VALUE || v > Integer.MAX_VALUE ? def : (int) v;
         } catch (NumberFormatException ex) {
             return def;
         }
