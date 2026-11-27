@@ -21,7 +21,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.child;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.children;
 
-/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양)과 표를 옮긴다. 변환 한 번마다 새로 만든다. */
+/** HWPX → DOCX. 지금은 본문 문단(글자·문단 모양), 표, 그림을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class HwpxToDocx implements Converter {
 
     @Override
