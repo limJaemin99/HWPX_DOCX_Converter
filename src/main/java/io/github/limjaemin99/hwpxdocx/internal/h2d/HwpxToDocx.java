@@ -45,8 +45,8 @@ public final class HwpxToDocx implements Converter {
         List<String> sections = pkg.sections();
         String sectPr = null;
         for (int i = 0; i < sections.size(); i++) {
-            run.beginSection();
             StringBuilder sec = new StringBuilder();
+            run.beginSection(sec);
             Element root = pkg.parse(sections.get(i)).getDocumentElement();
             run.outlineId = outlineId(root);
             for (Element p : children(root, NS_HP, "p")) {
@@ -57,6 +57,7 @@ public final class HwpxToDocx implements Converter {
                 stats.warn("구역 XML 하나에 구역 설정이 둘 이상이면 처음 것만 씀");
             }
             sectPr = run.sectPr();
+            sectPr = run.splitColumns(sec, sectPr);
             if (i < sections.size() - 1) {
                 endSection(sec, sectPr);
             }
@@ -132,10 +133,15 @@ public final class HwpxToDocx implements Converter {
      * 문단 변환은 표 뒤에도 늘 문단을 남기므로 구역의 마지막 요소는 문단이다.
      */
     static void endSection(StringBuilder sec, String sectPr) {
-        int p = sec.lastIndexOf("<w:p><w:pPr>");
+        endSectionBefore(sec, sec.length(), sectPr);
+    }
+
+    /** {@code pos} 앞의 마지막 문단에 구역 설정을 둔다. */
+    static void endSectionBefore(StringBuilder sec, int pos, String sectPr) {
+        int p = pos <= 0 ? -1 : sec.lastIndexOf("<w:p><w:pPr>", pos - 1);
         int close = p < 0 ? -1 : sec.indexOf("</w:pPr>", p);
         if (close < 0) {
-            sec.append("<w:p><w:pPr>").append(sectPr).append("</w:pPr></w:p>");
+            sec.insert(Math.max(0, pos), "<w:p><w:pPr>" + sectPr + "</w:pPr></w:p>");
         } else {
             sec.insert(close, sectPr);
         }
@@ -155,6 +161,11 @@ public final class HwpxToDocx implements Converter {
         // 쪽 설정·머리말·꼬리말: 지금은 문서 전체에 첫 구역 것을 씀
         private Element secPr;
         private Element colPr;
+        // 구역 중간 단 설정(한글 다단 설정 나누기): {본문에서 그 문단이 시작하는 위치, 새 hp:colPr}
+        private final List<Object[]> columnSplits = new ArrayList<Object[]>();
+        private StringBuilder sectionOut;
+        private StringBuilder paragraphOut;
+        private int paragraphStart;
         int secPrCount;
         private Element pageNum;
         private final Map<String, String> headers = new LinkedHashMap<String, String>();
@@ -173,7 +184,9 @@ public final class HwpxToDocx implements Converter {
         private int newPageNumber;
 
         /** 구역마다 쪽 설정·머리말을 새로 모은다. 머리말을 정하지 않은 구역은 Word에서 앞 구역 것을 이어 씀. */
-        void beginSection() {
+        void beginSection(StringBuilder sectionOut) {
+            this.sectionOut = sectionOut;
+            columnSplits.clear();
             secPr = null;
             colPr = null;
             secPrCount = 0;
@@ -219,6 +232,19 @@ public final class HwpxToDocx implements Converter {
          * 마지막 조각은 비어 있어도 남긴다 (표 칸은 문단으로 끝나야 하고, 표가 이어 붙지 않게 함).
          */
         void paragraph(Element p, StringBuilder out) throws IOException {
+            StringBuilder savedOut = paragraphOut;
+            int savedStart = paragraphStart;
+            paragraphOut = out;
+            paragraphStart = out.length();
+            try {
+                paragraphBody(p, out);
+            } finally {
+                paragraphOut = savedOut;
+                paragraphStart = savedStart;
+            }
+        }
+
+        private void paragraphBody(Element p, StringBuilder out) throws IOException {
             stats.paragraph();
             int maxHeight = 0;
             boolean hasObject = false;
@@ -341,6 +367,10 @@ public final class HwpxToDocx implements Converter {
             if (isHp(c, "colPr")) {
                 if (colPr == null) {
                     colPr = c;
+                } else if (!atSectionStart && paragraphOut == sectionOut && headerFooterDepth == 0 && noteRefTag == null) {
+                    columnSplits.add(new Object[]{paragraphStart, c});
+                } else {
+                    stats.warn("구역 첫 문단·표·머리말·각주 안의 추가 단 설정은 무시함");
                 }
             } else if (isHp(c, "header") || isHp(c, "footer")) {
                 headerFooter(c);
@@ -653,6 +683,29 @@ public final class HwpxToDocx implements Converter {
                 b.append("<w:titlePg/>");
             }
             return b.append("<w:docGrid w:linePitch=\"360\"/></w:sectPr>").toString();
+        }
+
+        /**
+         * 구역 중간 단 설정이 있으면 그 문단 앞에서 Word 구역을 나눈다. 앞 조각은 {@code sectPr}(머리말 참조 포함)에
+         * 그때까지의 단 수를 쓰고, 뒤 조각은 '이어서' 구역으로 쪽 설정만 적어 머리말·꼬리말은 앞 구역 것을 이어 쓰게 함.
+         * 돌려주는 값은 이 구역 마지막 조각의 구역 설정.
+         */
+        String splitColumns(StringBuilder sec, String sectPr) {
+            if (columnSplits.isEmpty()) {
+                return sectPr;
+            }
+            // 뒤에서부터 넣어야 앞쪽 위치가 밀리지 않음
+            for (int k = columnSplits.size() - 1; k >= 0; k--) {
+                Element before = k == 0 ? colPr : (Element) columnSplits.get(k - 1)[1];
+                String sp = k == 0 ? sectPr : continuousSectPr(before);
+                endSectionBefore(sec, (Integer) columnSplits.get(k)[0], sp);
+            }
+            return continuousSectPr((Element) columnSplits.get(columnSplits.size() - 1)[1]);
+        }
+
+        private String continuousSectPr(Element cols) {
+            return "<w:sectPr><w:type w:val=\"continuous\"/>" + DocxProps.pageSetup(secPr, cols)
+                    .replaceAll("<w:pgNumType [^>]*/>", "") + "<w:docGrid w:linePitch=\"360\"/></w:sectPr>";
         }
 
         private static List<String[]> relsOf(Map<String, List<String[]>> m, String kind) {
