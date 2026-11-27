@@ -231,12 +231,26 @@ class HwpxPageTest {
     }
 
     @Test
-    void pictureInHeaderIsSkipped() throws Exception {
+    void pictureInHeaderUsesHeaderRelationships() throws Exception {
         convert(new TestHwpx().binData("image1", "BinData/image1.png", "image/png", HwpxPictureTest.png())
                 .paragraphs(para("0", run("0", headerCtrl("header", "BOTH",
-                        para("0", run("0", pic("image1", 7200, 3600, true)))))))
+                        para("0", run("0", pic("image1", 7200, 3600, true) + t("대한민국헌법")))))),
+                        para("0", run("0", pic("image1", 3600, 3600, true))))
                 .toBytes());
-        assertEquals(Integer.valueOf(1), result.getSkipped().get("hp:pic"));
-        assertEquals(0, result.getPictureCount());
-    }
-}
+        assertEquals(0, result.getSkippedCount());
+        assertEquals(2, result.getPictureCount());
+        String hdr = part("header", "default");
+        String rid = ((Element) xml(hdr).getElementsByTagNameNS("http://schemas.openxmlformats.org/drawingml/2006/main", "blip")
+                .item(0)).getAttributeNS(R, "embed");
+        String relsName = "word/_rels/" + hdr.substring("word/".length()) + ".rels";
+        NodeList rels = xml(relsName).getElementsByTagNameNS(PR, "Relationship");
+        assertEquals(1, rels.getLength());
+        assertEquals(rid, ((Element) rels.item(0)).getAttribute("Id"));
+        assertEquals("media/image1.png", ((Element) rels.item(0)).getAttribute("Target"));
+        // 본문과 머리말이 같은 그림을 쓰면 파일은 하나
+        int media = 0;
+        for (String name : out.keySet()) {
+            media += name.startsWith("word/media/") ? 1 : 0;
+        }
+        assertEquals(1, media);
+    }}
