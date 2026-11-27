@@ -43,6 +43,28 @@ java -jar hwpx-docx-converter-<버전>.jar 입력.docx 출력.hwpx
 
 종료 코드는 0 성공, 1 변환 실패, 2 사용법 오류입니다. 실패하면 출력 파일을 남기지 않습니다.
 
+## 폐쇄망 사용
+
+인터넷이 연결되지 않은 환경에서 쓸 수 있게 만듭니다.
+
+- jar 하나만 넣으면 됩니다. 외부 라이브러리가 없습니다
+- Java 8 이상이면 됩니다
+- 실행 중에 네트워크에 접근하지 않습니다
+  - 업데이트 확인, 사용 통계 전송, 원격 자원 읽기가 없습니다
+  - 문서 안 XML의 외부 참조(외부 엔티티, 외부 DTD, XInclude)를 읽지 않습니다. DOCTYPE이 든 XML은 거부합니다
+  - 줄 간격 보정에 쓰는 글꼴 줄 높이 표는 jar 안에 들어 있어, 실행하는 서버에 글꼴 파일이 없어도 됩니다 (v0.4.0에서 추가 예정)
+- CI가 PR마다 jar(`jdeps`)와 소스를 검사해 `java.net`·`javax.net`·`java.rmi`·`javax.naming` 등 네트워크 관련 API가 들어가면 합치지 않습니다 (`build.sh check`)
+
+반입할 때는 릴리스에 함께 올라간 `.sha256` 파일로 jar가 바뀌지 않았는지 확인합니다.
+
+```
+# Windows: 출력된 값이 .sha256 파일 안의 값과 같은지 봅니다
+certutil -hashfile hwpx-docx-converter-<버전>.jar SHA256
+
+# Linux: jar와 .sha256 파일을 같은 폴더에 두고
+sha256sum -c hwpx-docx-converter-<버전>.jar.sha256
+```
+
 ## 직접 빌드
 
 빌드에는 JDK 9 이상(개발은 JDK 17)이 필요하고, 만든 jar는 Java 8 이상에서 돌아갑니다. Maven 없이 JDK만으로 빌드합니다.
