@@ -143,6 +143,15 @@ public final class DocxSkeleton {
         return b.append("</Relationships>").toString();
     }
 
+    /** 관계 파일 XML. @param rels {Id, 관계 이름(image 등), Target} 목록 */
+    public static String relationshipsXml(List<String[]> rels) {
+        StringBuilder b = new StringBuilder(XML_DECL).append("<Relationships xmlns=\"").append(NS_PKG_REL).append("\">");
+        for (String[] r : rels) {
+            b.append(rel(r[0], REL_TYPE + r[1], r[2]));
+        }
+        return b.append("</Relationships>").toString();
+    }
+
     private static String rel(String id, String type, String target) {
         return "<Relationship Id=\"" + id + "\" Type=\"" + type + "\" Target=\"" + target + "\"/>";
     }
