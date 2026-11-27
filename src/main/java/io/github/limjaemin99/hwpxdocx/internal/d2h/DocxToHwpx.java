@@ -23,7 +23,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.NS_W;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.attr;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.child;
 
-/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양), 표, 그림, 쪽 설정, 머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
+/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양), 표, 그림, 구역별 쪽 설정, 머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class DocxToHwpx implements Converter {
 
     // Word 한 줄 높이 ÷ 글자 크기 (Word에서 잰 값). 배수 줄 간격을 한컴 비율로 바꿀 때 씀. 없는 글꼴은 평균값
@@ -47,30 +47,43 @@ public final class DocxToHwpx implements Converter {
         Run run = new Run(pkg, new DocxStyles(pkg), stats);
         NodeList bodies = pkg.parse(pkg.mainPart).getElementsByTagNameNS(NS_W, "body");
         List<String> paragraphs = new ArrayList<String>();
-        Element sectPr = null;
+        Element lastSectPr = null;
         if (bodies.getLength() > 0) {
             Element body = (Element) bodies.item(0);
             run.blocks(body, paragraphs);
             for (Node n = body.getFirstChild(); n != null; n = n.getNextSibling()) {
                 if (n instanceof Element && "sectPr".equals(n.getLocalName()) && NS_W.equals(n.getNamespaceURI())) {
-                    sectPr = (Element) n;
+                    lastSectPr = (Element) n;
                 }
             }
         }
-        if (paragraphs.isEmpty()) {
-            paragraphs.add("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
-                    + "<hp:run charPrIDRef=\"0\"/></hp:p>");
+        // Word는 구역 끝 문단의 pPr에 그 구역 설정을 두고, 마지막 구역 설정은 body 끝에 둠
+        List<Element> sectPrs = new ArrayList<Element>(run.sectionEnds);
+        sectPrs.add(lastSectPr);
+        List<Integer> cuts = new ArrayList<Integer>(run.sectionCuts);
+        cuts.add(paragraphs.size());
+        List<String> sections = new ArrayList<String>();
+        Map<String, String> inherited = new HashMap<String, String>();
+        int from = 0;
+        for (int i = 0; i < sectPrs.size(); i++) {
+            List<String> paras = new ArrayList<String>(paragraphs.subList(from, cuts.get(i)));
+            from = cuts.get(i);
+            if (paras.isEmpty()) {
+                paras.add("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
+                        + "<hp:run charPrIDRef=\"0\"/></hp:p>");
+            }
+            // 구역 설정과 머리말·꼬리말은 구역 첫 문단의 맨 앞 런에 둠
+            String first = paras.get(0);
+            int open = first.indexOf('>') + 1;
+            paras.set(0, first.substring(0, open) + run.section(sectPrs.get(i), i, inherited) + first.substring(open));
+            StringBuilder section = new StringBuilder();
+            for (String p : paras) {
+                section.append(p);
+            }
+            sections.add(HwpxSkeleton.sectionXml(section.toString()));
         }
-        // 구역 설정과 머리말·꼬리말은 첫 문단의 맨 앞 런에 둠
-        String first = paragraphs.get(0);
-        int open = first.indexOf('>') + 1;
-        paragraphs.set(0, first.substring(0, open) + run.section(sectPr) + first.substring(open));
-        StringBuilder section = new StringBuilder();
-        for (String p : paragraphs) {
-            section.append(p);
-        }
-        HwpxSkeleton.write(HwpxSkeleton.entries(HwpxSkeleton.headerXml(run.refs.refList()),
-                HwpxSkeleton.sectionXml(section.toString()), run.binItems, run.binData), out);
+        HwpxSkeleton.write(HwpxSkeleton.entries(HwpxSkeleton.headerXml(run.refs.refList(), sections.size()),
+                sections, run.binItems, run.binData), out);
     }
 
     /** 문단 안의 한 조각: 글, 탭, 줄바꿈, 쪽 나눔, 쪽 번호. */
@@ -136,6 +149,10 @@ public final class DocxToHwpx implements Converter {
         final HwpxRefs refs = new HwpxRefs();
         // 표·그림 등 개체 ID. 문서 안에서 겹치지 않으면 됨
         int nextObjectId = 1000;
+        // 본문 문단 pPr 안의 구역 설정과, 그 구역이 끝나는 위치(본문 HWPX 문단 수)
+        final List<Element> sectionEnds = new ArrayList<Element>();
+        final List<Integer> sectionCuts = new ArrayList<Integer>();
+        private int tableDepth;
 
         Run(DocxPackage pkg, DocxStyles styles, ConvertStats stats) throws IOException {
             this.pkg = pkg;
@@ -354,7 +371,12 @@ public final class DocxToHwpx implements Converter {
             DocxStyles.putMargins(margins, ownMar);
 
             List<String> inner = new ArrayList<String>();
-            blocks(c.tc, inner);
+            tableDepth++;
+            try {
+                blocks(c.tc, inner);
+            } finally {
+                tableDepth--;
+            }
             if (inner.isEmpty()) {
                 inner.add("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
                         + "<hp:run charPrIDRef=\"0\"/></hp:p>");
@@ -416,9 +438,6 @@ public final class DocxToHwpx implements Converter {
             if (numId != null && !"0".equals(numId)) {
                 stats.warn("자동 번호·글머리표는 아직 옮기지 않음 (번호 글자가 빠짐)");
             }
-            if (child(pPr, "sectPr") != null) {
-                stats.warn("구역이 여러 개인 문서는 아직 구역을 나누지 않음");
-            }
             Props mark = rp.copy().applyRun(child(pPr, "rPr"));
 
             List<Item> items = new ArrayList<Item>();
@@ -448,6 +467,11 @@ public final class DocxToHwpx implements Converter {
             for (int i = 0; i < pieces.size(); i++) {
                 out.add("<hp:p id=\"0\" paraPrIDRef=\"" + paraId + "\" styleIDRef=\"0\" pageBreak=\"" + (i > 0 ? 1 : 0)
                         + "\" columnBreak=\"0\" merged=\"0\">" + runs(pieces.get(i), markId) + "</hp:p>");
+            }
+            Element ownSect = child(pPr, "sectPr");
+            if (ownSect != null && tableDepth == 0 && pkg.mainPart.equals(part)) {
+                sectionEnds.add(ownSect);
+                sectionCuts.add(out.size());
             }
         }
 
@@ -671,13 +695,24 @@ public final class DocxToHwpx implements Converter {
         // ---------- 쪽 설정·머리말·꼬리말 ----------
 
         /**
-         * 마지막 w:sectPr → 구역 설정 런 + 머리말·꼬리말 런.
+         * w:sectPr 하나 → 구역 설정 런 + 머리말·꼬리말 런.
+         * 머리말·꼬리말을 적지 않은 구역은 Word·한컴 모두 앞 구역 것을 이어 쓰므로 구역이 직접 적은 것만 둔다.
+         * {@code inherited}는 지금까지 이어진 종류별 파트로, 홀수·짝수 나눔을 정할 때만 씀.
          * Word 위 여백은 용지 끝에서 본문까지, 머리말 거리는 용지 끝에서 머리말까지라
          * 한컴 위 여백 = 머리말 거리, 머리말 높이 = 위 여백 − 머리말 거리로 바꾼다 (아래도 같음).
          */
-        String section(Element sectPr) throws IOException {
+        String section(Element sectPr, int index, Map<String, String> inherited) throws IOException {
             if (sectPr == null) {
                 return HwpxSkeleton.secPrRun("0");
+            }
+            if (index > 0) {
+                // 한컴 구역은 늘 새 쪽에서 시작함
+                String type = attr(child(sectPr, "type"), "val");
+                if ("continuous".equals(type) || "nextColumn".equals(type)) {
+                    stats.warn("같은 쪽에서 이어지는 구역 나누기는 새 쪽에서 시작하는 구역으로 바꿈");
+                } else if ("oddPage".equals(type) || "evenPage".equals(type)) {
+                    stats.warn("홀수·짝수 쪽에서 시작하는 구역 나누기는 다음 쪽에서 시작하는 구역으로 바꿈");
+                }
             }
             Element pgSz = child(sectPr, "pgSz");
             Element pgMar = child(sectPr, "pgMar");
@@ -717,12 +752,17 @@ public final class DocxToHwpx implements Converter {
                         }
                     }
                 }
+                // 짝수 쪽 머리말이 앞 구역에서 이어지면 이 구역의 기본 머리말은 홀수 쪽에만 걸어야 함
+                boolean even = parts.containsKey("even") || inherited.containsKey(what + ":even");
+                for (Map.Entry<String, String> e : parts.entrySet()) {
+                    inherited.put(what + ":" + e.getKey(), e.getValue());
+                }
                 if (titlePg && parts.containsKey("first") && hasText(parts.get("first"))) {
                     // 한컴은 첫 쪽 머리말을 따로 둘 수 없고 감추기만 됨
                     stats.warn("첫 쪽만 다른 머리말·꼬리말은 첫 쪽 감추기로 바꿈");
                 }
                 if (parts.containsKey("default")) {
-                    String apply = evenOdd && parts.containsKey("even") ? "ODD" : "BOTH";
+                    String apply = evenOdd && even ? "ODD" : "BOTH";
                     ctrls.append(headerFooter(what, apply, parts.get("default")));
                 }
                 if (evenOdd && parts.containsKey("even")) {
