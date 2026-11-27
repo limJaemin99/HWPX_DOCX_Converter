@@ -51,25 +51,43 @@ final class DocxParts {
         if (rid != null) {
             return rid;
         }
-        String e = ext.toLowerCase(Locale.ROOT);
-        String name = "image" + nextImage++ + "." + e;
-        parts.put("word/media/" + name, data);
-        defaults.put(e, IMAGE_TYPES.get(e));
         rid = "rId" + nextRel++;
-        rels.add(new String[]{rid, "image", "media/" + name});
+        rels.add(new String[]{rid, "image", media(source, data, ext)});
         imageRelBySource.put(source, rid);
         return rid;
+    }
+
+    private final Map<String, String> mediaBySource = new HashMap<String, String>();
+
+    /** 그림 파일을 word/media에 한 번만 넣고 word/ 기준 경로(media/imageN.확장자)를 돌려준다. */
+    String media(String source, byte[] data, String ext) {
+        String path = mediaBySource.get(source);
+        if (path == null) {
+            String e = ext.toLowerCase(Locale.ROOT);
+            path = "media/image" + nextImage++ + "." + e;
+            parts.put("word/" + path, data);
+            defaults.put(e, IMAGE_TYPES.get(e));
+            mediaBySource.put(source, path);
+        }
+        return path;
     }
 
     private boolean evenAndOddHeaders;
     private int nextHeader = 1;
     private int nextFooter = 1;
 
-    /** 머리말(hdr)·꼬리말(ftr) 파트를 더하고 관계 ID를 돌려준다. */
-    String headerFooter(String tag, String body) {
+    /**
+     * 머리말(hdr)·꼬리말(ftr) 파트를 더하고 본문 쪽 관계 ID를 돌려준다.
+     *
+     * @param partRels 이 파트 안에서 쓰는 관계 (그림 등). 비어 있지 않으면 파트 옆에 관계 파일을 만든다
+     */
+    String headerFooter(String tag, String body, List<String[]> partRels) {
         boolean header = "hdr".equals(tag);
         String name = (header ? "header" + nextHeader++ : "footer" + nextFooter++) + ".xml";
         parts.put("word/" + name, utf8(DocxSkeleton.headerFooterXml(tag, body)));
+        if (!partRels.isEmpty()) {
+            parts.put("word/_rels/" + name + ".rels", utf8(DocxSkeleton.relationshipsXml(partRels)));
+        }
         overrides.put("/word/" + name, "application/vnd.openxmlformats-officedocument.wordprocessingml."
                 + (header ? "header" : "footer") + "+xml");
         String rid = "rId" + nextRel++;

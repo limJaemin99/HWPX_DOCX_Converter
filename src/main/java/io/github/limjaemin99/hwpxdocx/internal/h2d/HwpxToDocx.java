@@ -90,6 +90,10 @@ public final class HwpxToDocx implements Converter {
         private Element pageNum;
         private final Map<String, String> headers = new LinkedHashMap<String, String>();
         private final Map<String, String> footers = new LinkedHashMap<String, String>();
+        // 머리말·꼬리말 파트 안 관계(그림): 종류(default·even) → {Id, 관계 이름, Target}
+        private final Map<String, List<String[]>> headerRels = new HashMap<String, List<String[]>>();
+        private final Map<String, List<String[]>> footerRels = new HashMap<String, List<String[]>>();
+        private List<String[]> partRels;
         private boolean oddOnlyHeader;
         private boolean oddOnlyFooter;
         // 구역 첫 문단을 읽는 중인지 (쪽 번호 새로 시작을 구역 설정으로 옮길 수 있는 자리)
@@ -269,6 +273,9 @@ public final class HwpxToDocx implements Converter {
             }
             StringBuilder b = new StringBuilder();
             Element sub = child(c, NS_HP, "subList");
+            List<String[]> rels = new ArrayList<String[]>();
+            List<String[]> savedRels = partRels;
+            partRels = rels;
             headerFooterDepth++;
             try {
                 if (sub != null) {
@@ -278,8 +285,10 @@ public final class HwpxToDocx implements Converter {
                 }
             } finally {
                 headerFooterDepth--;
+                partRels = savedRels;
             }
             target.put(kind, b.toString());
+            (header ? headerRels : footerRels).put(kind, rels);
         }
 
         /** 마지막 w:sectPr. 머리말·꼬리말 파트도 여기서 만든다. */
@@ -323,24 +332,32 @@ public final class HwpxToDocx implements Converter {
                 parts.evenAndOddHeaders();
             }
 
+            // 첫 쪽 파트는 기본 파트 내용을 쓰거나 비어 있으므로 기본 파트의 관계를 같이 씀 (안 쓰는 관계는 무해)
             StringBuilder b = new StringBuilder("<w:sectPr>");
             for (Map.Entry<String, String> e : hdr.entrySet()) {
-                b.append(reference("header", e.getKey(), parts.headerFooter("hdr", e.getValue())));
+                b.append(reference("header", e.getKey(), parts.headerFooter("hdr", e.getValue(), relsOf(headerRels, e.getKey()))));
             }
             if (titlePg && hdr.containsKey("default")) {
-                b.append(reference("header", "first", parts.headerFooter("hdr", firstHdr == null ? "" : firstHdr)));
+                b.append(reference("header", "first",
+                        parts.headerFooter("hdr", firstHdr == null ? "" : firstHdr, relsOf(headerRels, "default"))));
             }
             for (Map.Entry<String, String> e : ftr.entrySet()) {
-                b.append(reference("footer", e.getKey(), parts.headerFooter("ftr", e.getValue())));
+                b.append(reference("footer", e.getKey(), parts.headerFooter("ftr", e.getValue(), relsOf(footerRels, e.getKey()))));
             }
             if (titlePg && ftr.containsKey("default")) {
-                b.append(reference("footer", "first", parts.headerFooter("ftr", firstFtr == null ? "" : firstFtr)));
+                b.append(reference("footer", "first",
+                        parts.headerFooter("ftr", firstFtr == null ? "" : firstFtr, relsOf(footerRels, "default"))));
             }
             b.append(DocxProps.pageSetup(secPr, colPr, newPageNumber));
             if (titlePg) {
                 b.append("<w:titlePg/>");
             }
             return b.append("<w:docGrid w:linePitch=\"360\"/></w:sectPr>").toString();
+        }
+
+        private static List<String[]> relsOf(Map<String, List<String[]>> m, String kind) {
+            List<String[]> l = m.get(kind);
+            return l == null ? new ArrayList<String[]>() : l;
         }
 
         private static String reference(String what, String type, String rid) {
@@ -672,12 +689,7 @@ public final class HwpxToDocx implements Converter {
         private static final long EMU_PER_HWPUNIT = 127; // 914400 EMU/인치 ÷ 7200 HWPUNIT/인치
 
         private void picture(Element pic, String rPr, StringBuilder out) throws IOException {
-            if (headerFooterDepth > 0) {
-                // 머리말 파트는 자기 관계 파일이 따로 있어야 해서 아직 옮기지 않음
-                stats.warn("머리말·꼬리말 안 그림은 아직 옮기지 않음");
-                skip(pic);
-                return;
-            }
+
             Element img = child(pic, HwpxHeader.NS_HC, "img");
             String ref = img == null ? "" : img.getAttribute("binaryItemIDRef");
             String[] item = pkg.item(ref);
@@ -698,7 +710,23 @@ public final class HwpxToDocx implements Converter {
             Element cur = child(pic, NS_HP, "curSz");
             long cx = EMU_PER_HWPUNIT * Math.max(1, positive(HwpxHeader.intAttr(sz, "width", 0), HwpxHeader.intAttr(cur, "width", 0)));
             long cy = EMU_PER_HWPUNIT * Math.max(1, positive(HwpxHeader.intAttr(sz, "height", 0), HwpxHeader.intAttr(cur, "height", 0)));
-            String rid = parts.image(href, data, ext);
+            String rid;
+            if (headerFooterDepth > 0) {
+                // 머리말·꼬리말 파트의 관계는 그 파트의 관계 파일에 따로 적음
+                String media = parts.media(href, data, ext);
+                rid = null;
+                for (String[] r : partRels) {
+                    if (r[2].equals(media)) {
+                        rid = r[0];
+                    }
+                }
+                if (rid == null) {
+                    rid = "rId" + (partRels.size() + 1);
+                    partRels.add(new String[]{rid, "image", media});
+                }
+            } else {
+                rid = parts.image(href, data, ext);
+            }
             stats.picture();
             int id = drawingId++;
 
