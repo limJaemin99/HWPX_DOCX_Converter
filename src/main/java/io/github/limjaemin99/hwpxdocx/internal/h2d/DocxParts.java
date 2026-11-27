@@ -96,6 +96,34 @@ final class DocxParts {
     }
 
     private String numberingXml;
+    private final StringBuilder notesSettings = new StringBuilder();
+
+    /**
+     * 각주(footnotes)·미주(endnotes) 파트. 구분선·이어짐 구분선 특수 각주(ID -1, 0)를 앞에 두고 settings에 적는다.
+     *
+     * @param line   구분선을 그릴지
+     * @param pos    settings의 w:pos 요소 (없으면 빈 문자열)
+     */
+    void notes(String tag, String notes, List<String[]> partRels, boolean line, String pos) {
+        String one = tag.substring(0, tag.length() - 1);
+        String body = special(one, "separator", "-1", line) + special(one, "continuationSeparator", "0", line) + notes;
+        String name = tag + ".xml";
+        parts.put("word/" + name, utf8(DocxSkeleton.notesXml(tag, body)));
+        if (!partRels.isEmpty()) {
+            parts.put("word/_rels/" + name + ".rels", utf8(DocxSkeleton.relationshipsXml(partRels)));
+        }
+        overrides.put("/word/" + name, "application/vnd.openxmlformats-officedocument.wordprocessingml." + tag + "+xml");
+        rels.add(new String[]{"rId" + nextRel++, tag, name});
+        notesSettings.append("<w:").append(one).append("Pr>").append(pos)
+                .append("<w:").append(one).append(" w:id=\"-1\"/><w:").append(one).append(" w:id=\"0\"/></w:")
+                .append(one).append("Pr>");
+    }
+
+    private static String special(String one, String type, String id, boolean line) {
+        return "<w:" + one + " w:type=\"" + type + "\" w:id=\"" + id + "\"><w:p><w:pPr><w:spacing w:after=\"0\""
+                + " w:line=\"240\" w:lineRule=\"auto\"/></w:pPr>" + (line ? "<w:r><w:" + type + "/></w:r>" : "")
+                + "</w:p></w:" + one + ">";
+    }
 
     void numbering(String xml) {
         numberingXml = xml;
@@ -114,7 +142,7 @@ final class DocxParts {
             rels.add(new String[]{"rId" + nextRel++, "numbering", "numbering.xml"});
         }
         m.put("[Content_Types].xml", utf8(DocxSkeleton.contentTypesXml(defaults, overrides)));
-        m.put("word/settings.xml", utf8(DocxSkeleton.settingsXml(evenAndOddHeaders)));
+        m.put("word/settings.xml", utf8(DocxSkeleton.settingsXml(evenAndOddHeaders, notesSettings.toString())));
         m.put("word/document.xml", utf8(documentXml));
         m.put("word/_rels/document.xml.rels", utf8(DocxSkeleton.documentRels(rels)));
         m.putAll(parts);

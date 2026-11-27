@@ -24,7 +24,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.child;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.children;
 
-/** HWPX → DOCX. 본문 문단(글자·문단 모양), 표, 그림, 구역별 쪽 설정·머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
+/** HWPX → DOCX. 본문 문단(글자·문단 모양), 표, 그림, 구역별 쪽 설정·머리말·꼬리말, 각주·미주를 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class HwpxToDocx implements Converter {
 
     /** 구역 설정의 개요 번호 모양 ID. 없으면 한글 기본값 1. */
@@ -67,7 +67,18 @@ public final class HwpxToDocx implements Converter {
         if (!run.numbering.isEmpty()) {
             parts.numbering(run.numbering.xml());
         }
+        run.notes();
         DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), sectPr)), out);
+    }
+
+    /** w:rPr에 위 첨자를 넣음. 스키마 순서상 w:vertAlign은 w:em 앞. */
+    static String superscript(String rPr) {
+        String s = rPr.replaceAll("<w:vertAlign [^>]*/>", "");
+        int at = s.indexOf("<w:em ");
+        if (at < 0) {
+            at = s.lastIndexOf("</w:rPr>");
+        }
+        return s.substring(0, at) + "<w:vertAlign w:val=\"superscript\"/>" + s.substring(at);
     }
 
     /**
@@ -129,6 +140,19 @@ public final class HwpxToDocx implements Converter {
             newPageNumber = 0;
         }
         private int headerFooterDepth;
+
+        // 각주·미주: 쌓인 w:footnote 요소, 파트 안 관계(그림), 첫 구역 설정의 구분선·미주 위치
+        private final StringBuilder footnotes = new StringBuilder();
+        private final StringBuilder endnotes = new StringBuilder();
+        private final List<String[]> footnoteRels = new ArrayList<String[]>();
+        private final List<String[]> endnoteRels = new ArrayList<String[]>();
+        private int footnoteCount;
+        private int endnoteCount;
+        private Element firstFootNotePr;
+        private Element firstEndNotePr;
+        // 각주 안을 읽는 중이면 그 안 번호 글자 요소 이름(footnoteRef·endnoteRef)
+        private String noteRefTag;
+        private boolean noteRefWritten;
 
         Run(HwpxPackage pkg, HwpxHeader header, DocxParts parts, ConvertStats stats) {
             this.pkg = pkg;
@@ -253,8 +277,13 @@ public final class HwpxToDocx implements Converter {
                 if (pageNum == null) {
                     pageNum = c;
                 }
+            } else if (isHp(c, "footNote") || isHp(c, "endNote")) {
+                note(c, rPr, out);
+            } else if (isHp(c, "autoNum") && noteRefTag != null && !noteRefWritten
+                    && ("FOOTNOTE".equals(c.getAttribute("numType")) || "ENDNOTE".equals(c.getAttribute("numType")))) {
+                out.append(noteRef(c, rPr));
             } else if (isHp(c, "newNum") && "PAGE".equals(c.getAttribute("numType")) && atSectionStart
-                    && headerFooterDepth == 0) {
+                    && headerFooterDepth == 0 && noteRefTag == null) {
                 // 구역 첫 문단의 쪽 번호 새로 시작 = 구역 시작 번호. 구역 중간 것은 Word에 대응이 없음
                 newPageNumber = HwpxHeader.intAttr(c, "num", 0);
             } else if (isHp(c, "autoNum") && "PAGE".equals(c.getAttribute("numType"))) {
@@ -264,6 +293,116 @@ public final class HwpxToDocx implements Converter {
             } else {
                 skip(c);
             }
+        }
+
+        /** 한컴 각주·미주 → Word 각주 파트의 w:footnote·w:endnote와 본문의 참조. 각주 안 문단은 본문과 같이 옮긴다. */
+        private void note(Element c, String rPr, StringBuilder out) throws IOException {
+            boolean foot = isHp(c, "footNote");
+            if (headerFooterDepth > 0 || noteRefTag != null) {
+                stats.warn("머리말·꼬리말·각주 안의 각주는 Word에 둘 수 없어 뺌");
+                skip(c);
+                return;
+            }
+            String kind = foot ? "footnote" : "endnote";
+            int id = foot ? ++footnoteCount : ++endnoteCount;
+            StringBuilder b = new StringBuilder();
+            List<String[]> savedRels = partRels;
+            partRels = foot ? footnoteRels : endnoteRels;
+            noteRefTag = kind + "Ref";
+            noteRefWritten = false;
+            try {
+                Element sub = child(c, NS_HP, "subList");
+                if (sub != null) {
+                    for (Element p : children(sub, NS_HP, "p")) {
+                        paragraph(p, b);
+                    }
+                }
+            } finally {
+                partRels = savedRels;
+                noteRefTag = null;
+            }
+            String ref = "<w:r>" + superscript("<w:rPr></w:rPr>") + "<w:" + kind + "Ref/></w:r>";
+            if (b.length() == 0) {
+                b.append("<w:p>").append(ref).append("</w:p>");
+            } else if (!noteRefWritten) {
+                // 각주 번호(autoNum)가 없는 각주: Word 각주는 번호 글자가 있어야 번호가 보임
+                int at = b.indexOf("</w:pPr>");
+                b.insert(at < 0 ? b.indexOf(">") + 1 : at + "</w:pPr>".length(), ref);
+            }
+            (foot ? footnotes : endnotes).append("<w:").append(kind).append(" w:id=\"").append(id).append("\">")
+                    .append(b).append("</w:").append(kind).append('>');
+            // 본문 쪽 각주 번호는 한글에서도 위 첨자
+            out.append("<w:r>").append(superscript(rPr)).append("<w:").append(kind).append("Reference w:id=\"")
+                    .append(id).append("\"/></w:r>");
+        }
+
+        /** 각주 안 번호. 한컴은 번호 앞뒤 글자(예: 1)의 닫는 괄호)와 위 첨자 여부를 번호 모양에 둠. */
+        private String noteRef(Element autoNum, String rPr) {
+            noteRefWritten = true;
+            Element f = child(autoNum, NS_HP, "autoNumFormat");
+            String prefix = f == null ? "" : f.getAttribute("prefixChar");
+            String suffix = f == null ? "" : f.getAttribute("suffixChar");
+            boolean sup = f != null && "1".equals(f.getAttribute("supscript"));
+            StringBuilder b = new StringBuilder();
+            if (!prefix.isEmpty()) {
+                b.append("<w:r>").append(rPr).append("<w:t xml:space=\"preserve\">").append(Xml.text(prefix))
+                        .append("</w:t></w:r>");
+            }
+            b.append("<w:r>").append(sup ? superscript(rPr) : rPr).append("<w:").append(noteRefTag).append("/></w:r>");
+            if (!suffix.isEmpty()) {
+                b.append("<w:r>").append(rPr).append("<w:t xml:space=\"preserve\">").append(Xml.text(suffix))
+                        .append("</w:t></w:r>");
+            }
+            return b.toString();
+        }
+
+        /** 각주·미주 파트. 구분선과 미주 위치는 첫 구역 설정을 씀. */
+        void notes() {
+            if (footnoteCount > 0) {
+                parts.notes("footnotes", footnotes.toString(), footnoteRels, hasLine(firstFootNotePr), "");
+            }
+            if (endnoteCount > 0) {
+                Element place = child(firstEndNotePr, NS_HP, "placement");
+                boolean sectEnd = place != null && "END_OF_SECTION".equals(place.getAttribute("place"));
+                parts.notes("endnotes", endnotes.toString(), endnoteRels, hasLine(firstEndNotePr),
+                        sectEnd ? "<w:pos w:val=\"sectEnd\"/>" : "");
+            }
+        }
+
+        private static boolean hasLine(Element notePr) {
+            Element line = child(notePr, NS_HP, "noteLine");
+            return line == null || !"NONE".equals(line.getAttribute("type"));
+        }
+
+        /** 구역의 각주·미주 번호 모양 → w:footnotePr·w:endnotePr (pos, numFmt, numStart, numRestart 순). */
+        private String notePr(String tag, Element pr) {
+            if (pr == null) {
+                return "";
+            }
+            StringBuilder b = new StringBuilder("<w:").append(tag).append('>');
+            Element place = child(pr, NS_HP, "placement");
+            if ("footnotePr".equals(tag) && place != null && "1".equals(place.getAttribute("beneathText"))) {
+                b.append("<w:pos w:val=\"beneathText\"/>");
+            }
+            Element f = child(pr, NS_HP, "autoNumFormat");
+            String type = f == null || f.getAttribute("type").isEmpty() ? "DIGIT" : f.getAttribute("type");
+            String fmt = DocxNumbering.format(type);
+            if (fmt == null) {
+                stats.warn("각주 번호 모양 " + type + "는 숫자로 바꿈");
+                fmt = "decimal";
+            }
+            b.append("<w:numFmt w:val=\"").append(fmt).append("\"/>");
+            Element n = child(pr, NS_HP, "numbering");
+            if (n != null) {
+                b.append("<w:numStart w:val=\"").append(Math.max(1, HwpxHeader.intAttr(n, "newNum", 1))).append("\"/>");
+                String t = n.getAttribute("type");
+                if ("ON_SECTION".equals(t)) {
+                    b.append("<w:numRestart w:val=\"eachSect\"/>");
+                } else if ("ON_PAGE".equals(t) && "footnotePr".equals(tag)) {
+                    b.append("<w:numRestart w:val=\"eachPage\"/>");
+                }
+            }
+            return b.append("</w:").append(tag).append('>').toString();
         }
 
         private static String field(String instr, String rPr) {
@@ -364,6 +503,15 @@ public final class HwpxToDocx implements Converter {
                 b.append(reference("footer", "first",
                         parts.headerFooter("ftr", firstFtr == null ? "" : firstFtr, relsOf(footerRels, "default"))));
             }
+            Element footPr = child(secPr, NS_HP, "footNotePr");
+            Element endPr = child(secPr, NS_HP, "endNotePr");
+            if (firstFootNotePr == null) {
+                firstFootNotePr = footPr;
+            }
+            if (firstEndNotePr == null) {
+                firstEndNotePr = endPr;
+            }
+            b.append(notePr("footnotePr", footPr)).append(notePr("endnotePr", endPr));
             b.append(DocxProps.pageSetup(secPr, colPr, newPageNumber));
             if (titlePg) {
                 b.append("<w:titlePg/>");
@@ -727,8 +875,8 @@ public final class HwpxToDocx implements Converter {
             long cx = EMU_PER_HWPUNIT * Math.max(1, positive(HwpxHeader.intAttr(sz, "width", 0), HwpxHeader.intAttr(cur, "width", 0)));
             long cy = EMU_PER_HWPUNIT * Math.max(1, positive(HwpxHeader.intAttr(sz, "height", 0), HwpxHeader.intAttr(cur, "height", 0)));
             String rid;
-            if (headerFooterDepth > 0) {
-                // 머리말·꼬리말 파트의 관계는 그 파트의 관계 파일에 따로 적음
+            if (partRels != null) {
+                // 머리말·꼬리말·각주 파트의 관계는 그 파트의 관계 파일에 따로 적음
                 String media = parts.media(href, data, ext);
                 rid = null;
                 for (String[] r : partRels) {
