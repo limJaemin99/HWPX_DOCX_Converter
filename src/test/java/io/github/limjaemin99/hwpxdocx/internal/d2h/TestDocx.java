@@ -60,8 +60,23 @@ final class TestDocx {
         return "<w:t xml:space=\"preserve\">" + s + "</w:t>";
     }
 
-    /** word/media에 그림을 넣고 본문 관계에 이음. */
-    TestDocx image(String rid, String target, byte[] data) {
+    /** 마지막 구역 설정(w:sectPr 요소 전체)을 정해 본문을 씀. */
+    TestDocx bodyWithSection(String sectPr, String... blocks) {
+        return put("word/document.xml", DocxSkeleton.documentXml(String.join("", blocks), sectPr));
+    }
+
+    /** 머리말(hdr)·꼬리말(ftr) 파트를 넣고 본문 관계에 이음. */
+    TestDocx headerFooter(String rid, String name, String tag, String body) {
+        rels.add(new String[]{rid, "hdr".equals(tag) ? "header" : "footer", name});
+        put("word/" + name, DocxSkeleton.headerFooterXml(tag, body));
+        return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
+    }
+
+    TestDocx evenAndOddHeaders() {
+        return put("word/settings.xml", DocxSkeleton.settingsXml(true));
+    }
+
+    /** word/media에 그림을 넣고 본문 관계에 이음. */    TestDocx image(String rid, String target, byte[] data) {
         rels.add(new String[]{rid, "image", target});
         entries.put("word/" + target, data);
         return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
