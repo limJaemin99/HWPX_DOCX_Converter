@@ -190,6 +190,12 @@ final class DocxProps {
      * @param hasObject 문단에 표·그림이 있으면 줄 높이를 고정하지 않음 (잘림 방지)
      */
     static String paraProps(HwpxHeader h, String paraPrId, int maxHeight, boolean hasObject, ConvertStats stats) {
+        return paraProps(h, paraPrId, maxHeight, hasObject, "", stats);
+    }
+
+    /** @param numPr 문단 번호 (w:numPr, 없으면 빈 문자열). widowControl 뒤 자리에 넣음 */
+    static String paraProps(HwpxHeader h, String paraPrId, int maxHeight, boolean hasObject, String numPr,
+            ConvertStats stats) {
         Element p = h.paraPr(paraPrId);
         if (p == null) {
             return "";
@@ -209,11 +215,7 @@ final class DocxProps {
             b.append("<w:widowControl w:val=\"").append("1".equals(br.getAttribute("widowOrphan")) ? 1 : 0)
                     .append("\"/>");
         }
-        Element heading = child(p, NS_HH, "heading");
-        String headingType = heading == null ? "NONE" : heading.getAttribute("type");
-        if (!headingType.isEmpty() && !"NONE".equals(headingType)) {
-            stats.warn("문단 번호(" + headingType + ")는 아직 옮기지 않음");
-        }
+        b.append(numPr);
         Element auto = child(p, NS_HH, "autoSpacing");
         b.append("<w:autoSpaceDE w:val=\"").append(auto != null && "1".equals(auto.getAttribute("eAsianEng")) ? 1 : 0)
                 .append("\"/><w:autoSpaceDN w:val=\"")

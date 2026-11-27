@@ -19,12 +19,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HH;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.child;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.children;
 
 /** HWPX → DOCX. 본문 문단(글자·문단 모양), 표, 그림, 구역별 쪽 설정·머리말·꼬리말을 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class HwpxToDocx implements Converter {
+
+    /** 구역 설정의 개요 번호 모양 ID. 없으면 한글 기본값 1. */
+    static String outlineId(Element root) {
+        org.w3c.dom.NodeList l = root.getElementsByTagNameNS(NS_HP, "secPr");
+        String id = l.getLength() == 0 ? "" : ((Element) l.item(0)).getAttribute("outlineShapeIDRef");
+        return id.isEmpty() ? "1" : id;
+    }
 
     @Override
     public void convert(InputStream in, OutputStream out, ConvertOptions options, ConvertStats stats)
@@ -39,6 +47,7 @@ public final class HwpxToDocx implements Converter {
             run.beginSection();
             StringBuilder sec = new StringBuilder();
             Element root = pkg.parse(sections.get(i)).getDocumentElement();
+            run.outlineId = outlineId(root);
             for (Element p : children(root, NS_HP, "p")) {
                 run.paragraph(p, sec);
                 run.atSectionStart = false;
@@ -54,6 +63,9 @@ public final class HwpxToDocx implements Converter {
         }
         if (body.length() == 0) {
             body.append("<w:p/>");
+        }
+        if (!run.numbering.isEmpty()) {
+            parts.numbering(run.numbering.xml());
         }
         DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), sectPr)), out);
     }
@@ -96,6 +108,9 @@ public final class HwpxToDocx implements Converter {
         private List<String[]> partRels;
         private boolean oddOnlyHeader;
         private boolean oddOnlyFooter;
+        final DocxNumbering numbering;
+        // 이 구역의 개요 번호 모양
+        String outlineId = "1";
         // 구역 첫 문단을 읽는 중인지 (쪽 번호 새로 시작을 구역 설정으로 옮길 수 있는 자리)
         boolean atSectionStart;
         private int newPageNumber;
@@ -120,6 +135,7 @@ public final class HwpxToDocx implements Converter {
             this.header = header;
             this.parts = parts;
             this.stats = stats;
+            this.numbering = new DocxNumbering(header, stats);
         }
 
         /**
@@ -817,10 +833,12 @@ public final class HwpxToDocx implements Converter {
         }
 
         private String paraProps(String id, int maxHeight, boolean hasObject) {
-            String key = id + "/" + maxHeight + "/" + hasObject;
+            Element pp = header.paraPr(id);
+            String numPr = numbering.numPr(pp == null ? null : child(pp, NS_HH, "heading"), outlineId);
+            String key = id + "/" + maxHeight + "/" + hasObject + "/" + numPr;
             String v = paraProps.get(key);
             if (v == null) {
-                v = DocxProps.paraProps(header, id, maxHeight, hasObject, stats);
+                v = DocxProps.paraProps(header, id, maxHeight, hasObject, numPr, stats);
                 paraProps.put(key, v);
             }
             return v;

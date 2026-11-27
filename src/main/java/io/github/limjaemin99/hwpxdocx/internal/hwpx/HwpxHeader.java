@@ -22,6 +22,8 @@ public final class HwpxHeader {
     private final Map<String, Element> paraPr;
     private final Map<String, Element> borderFill;
     private final Map<String, Element> style;
+    private final Map<String, Element> numbering;
+    private final Map<String, Element> bullet;
 
     public HwpxHeader(Document doc) {
         NodeList faces = doc.getElementsByTagNameNS(NS_HH, "fontface");
@@ -37,6 +39,8 @@ public final class HwpxHeader {
         paraPr = byId(doc, "paraPr");
         borderFill = byId(doc, "borderFill");
         style = byId(doc, "style");
+        numbering = byId(doc, "numbering");
+        bullet = byId(doc, "bullet");
     }
 
     private static Map<String, Element> byId(Document doc, String local) {
@@ -62,6 +66,14 @@ public final class HwpxHeader {
 
     public Element paraPr(String id) {
         return paraPr.get(id);
+    }
+
+    public Element numbering(String id) {
+        return numbering.get(id);
+    }
+
+    public Element bullet(String id) {
+        return bullet.get(id);
     }
 
     public Element borderFill(String id) {
