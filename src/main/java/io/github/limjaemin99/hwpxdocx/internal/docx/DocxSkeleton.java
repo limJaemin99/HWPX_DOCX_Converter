@@ -15,7 +15,7 @@ import java.util.zip.ZipOutputStream;
  */
 public final class DocxSkeleton {
 
-    static final String NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    public static final String NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     static final String NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     static final String NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships";
     static final String NS_CT = "http://schemas.openxmlformats.org/package/2006/content-types";
@@ -56,8 +56,13 @@ public final class DocxSkeleton {
 
     /** {@code out}은 닫지 않는다. */
     public static void write(OutputStream out) throws IOException {
+        write(entries(), out);
+    }
+
+    /** 패키지 항목을 순서대로 ZIP으로 쓴다. {@code out}은 닫지 않는다. */
+    public static void write(Map<String, byte[]> entries, OutputStream out) throws IOException {
         ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
-        for (Map.Entry<String, byte[]> e : entries().entrySet()) {
+        for (Map.Entry<String, byte[]> e : entries.entrySet()) {
             ZipEntry z = new ZipEntry(e.getKey());
             z.setTime(FIXED_TIME);
             z.setMethod(ZipEntry.DEFLATED);
@@ -110,10 +115,15 @@ public final class DocxSkeleton {
     }
 
     static String documentXml() {
+        return documentXml("<w:p/>");
+    }
+
+    /** {@code body}(w:p·w:tbl 나열) 뒤에 기본 구역 설정을 붙인 document.xml. */
+    public static String documentXml(String body) {
         // A4 세로(twip = 1/20 pt). 여백은 한국어판 Word 새 문서 기본값
         return XML_DECL + "<w:document xmlns:w=\"" + NS_W + "\" xmlns:r=\"" + NS_R + "\">"
                 + "<w:body>"
-                + "<w:p/>"
+                + body
                 + "<w:sectPr>"
                 + "<w:pgSz w:w=\"11906\" w:h=\"16838\"/>"
                 + "<w:pgMar w:top=\"1701\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\""
