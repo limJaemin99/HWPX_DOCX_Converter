@@ -126,6 +126,18 @@ sha256sum -c hwpx-docx-converter-<버전>.jar.sha256
 - 나빠짐으로 보는 것: 변환 실패, 결과 글자·문단·표·그림 수 감소, 건너뛴 요소 증가, 기준값에 없는 문서, 문서가 없어진 기준값
 - 원본 글자 수가 기준값과 다르면 문서가 바뀐 것이므로 기준값을 갱신합니다
 
+공개 시험 문서 (`src/test/resources/docs/hwpx/`, 한컴오피스 한글 2022에서 작성·저장):
+
+| 파일 | 보는 기능 |
+|---|---|
+| `char-format.hwpx` | 글자 크기·진하게·기울임·밑줄·색·글꼴, 한 문단 안에서 섞인 글자 모양, 위첨자 |
+| `para-format.hwpx` | 가운데·오른쪽·양쪽 정렬, 들여쓰기·내어쓰기, 왼쪽 여백, 줄 간격 130·160·200% |
+| `table-merge.hwpx` | 표 두 개, 세로 셀 합치기(3행), 가로 셀 합치기(3열) |
+| `header-footer.hwpx` | 머리말, 꼬리말, 쪽 번호(아래 가운데), 쪽 나누기 |
+| `multi-section.hwpx` | 구역 3개: 세로 용지, 가로 용지, 2단 |
+| `numbering.hwpx` | 문단 번호, 글머리표 |
+| `footnote.hwpx` | 각주 2개, 미주 1개 |
+
 ### 글꼴 줄 높이 표
 
 Word 배수 줄 간격은 글꼴의 한 줄 높이 기준이라, 글꼴마다 "한 줄 높이 ÷ 글자 크기"를 미리 계산해 `src/main/resources/io/github/limjaemin99/hwpxdocx/font-line-height.tsv`에 둡니다. 글꼴 파일은 저장소에 넣지 않습니다.
@@ -148,6 +160,12 @@ Word 배수 줄 간격은 글꼴의 한 줄 높이 기준이라, 글꼴마다 "�
 - 커밋과 PR 제목은 [Conventional Commits](https://www.conventionalcommits.org/ko/v1.0.0/) 형식(`feat:`, `fix:`, `docs:` …)으로 쓰고 요약은 한국어로 씁니다
 - 형식의 근거는 공개 규격입니다: HWPX는 OWPML(KS X 6101), DOCX는 ECMA-376(ISO/IEC 29500)
 - 변경 기록은 [CHANGELOG.md](CHANGELOG.md)에 있습니다
+
+## 시험 문서 출처
+
+- 공개 시험 문서의 문장은 법제처 국가법령정보센터(https://www.law.go.kr)에 공개된 「대한민국헌법」 조문입니다. 법령은 저작권법 제7조에 따라 보호받지 않는 저작물입니다
+- 표 칸 제목·머리말·꼬리말·각주 문장 일부는 시험용으로 새로 쓴 것입니다
+- 문서 저장 정보(작성자·마지막 저장한 사람)는 비웠습니다
 
 ## 라이선스
 
