@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.h2d;
 
+import io.github.limjaemin99.hwpxdocx.internal.Xml;
 import io.github.limjaemin99.hwpxdocx.ConvertOptions;
 import io.github.limjaemin99.hwpxdocx.internal.ConvertStats;
 import io.github.limjaemin99.hwpxdocx.internal.Converter;

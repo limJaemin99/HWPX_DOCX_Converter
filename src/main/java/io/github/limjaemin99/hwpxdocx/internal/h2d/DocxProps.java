@@ -8,7 +8,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
-import static io.github.limjaemin99.hwpxdocx.internal.h2d.Xml.attr;
+import static io.github.limjaemin99.hwpxdocx.internal.Xml.attr;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HC;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HH;
 import static io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader.NS_HP;

@@ -1,16 +1,16 @@
-package io.github.limjaemin99.hwpxdocx.internal.h2d;
+package io.github.limjaemin99.hwpxdocx.internal;
 
 /** 문자열로 XML을 만들 때 쓰는 이스케이프. XML 1.0에 넣을 수 없는 제어 문자는 버린다. */
-final class Xml {
+public final class Xml {
 
     private Xml() {
     }
 
-    static String text(String s) {
+    public static String text(String s) {
         return escape(s, false);
     }
 
-    static String attr(String s) {
+    public static String attr(String s) {
         return escape(s, true);
     }
 
