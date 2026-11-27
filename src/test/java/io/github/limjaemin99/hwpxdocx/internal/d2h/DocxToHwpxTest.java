@@ -16,6 +16,7 @@ import org.w3c.dom.NodeList;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -232,6 +233,29 @@ class DocxToHwpxTest {
 
     private static Element lineSpacing(Element paraPr, String branch) {
         return kid(kid(kid(paraPr, HP, "switch"), HP, branch), HH, "lineSpacing");
+    }
+
+    @Test
+    void lineSpacingUsesBundledFontTable() throws Exception {
+        String georgia = "<w:rFonts w:ascii=\"Georgia\" w:hAnsi=\"Georgia\" w:eastAsia=\"Georgia\"/>";
+        String unknown = "<w:rFonts w:ascii=\"Unknown Sans\" w:hAnsi=\"Unknown Sans\" w:eastAsia=\"Unknown Sans\"/>";
+        convert(new TestDocx().body(
+                p("<w:spacing w:line=\"360\" w:lineRule=\"auto\"/><w:rPr>" + georgia + "</w:rPr>", r(georgia, t("가"))),
+                p("<w:spacing w:line=\"360\" w:lineRule=\"auto\"/><w:rPr>" + unknown + "</w:rPr>", r(unknown, t("나"))))
+                .toBytes());
+        // Georgia는 jar 안 표에만 있음(1.136): 1.5줄 = 170 %. 표에 없는 글꼴은 평균 1.3 → 195 %
+        assertEquals("170", lineSpacing(paraPrOf(0), "case").getAttribute("value"));
+        assertEquals("195", lineSpacing(paraPrOf(1), "case").getAttribute("value"));
+    }
+
+    @Test
+    void fontLineTableSkipsBrokenLines() {
+        java.util.Map<String, Double> m = FontLineTable.load(new java.io.ByteArrayInputStream(
+                "# 주석\n바탕\t1.300\n깨진 줄\n숫자아님\tabc\n너무큼\t9\n".getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1, m.size());
+        assertEquals(Double.valueOf(1.3), m.get("바탕"));
+        assertTrue(FontLineTable.load(null).isEmpty());
+        assertEquals(Double.valueOf(1.729), FontLineTable.factor("맑은 고딕"));
     }
 
     @Test
