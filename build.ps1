@@ -4,7 +4,10 @@ JDK만으로 빌드·시험 (Maven 없이). Linux·CI는 build.sh
   .\build.ps1                 빌드 + 시험
   .\build.ps1 build           컴파일 → jar → 시험 클래스 컴파일 (JDK 9 이상)
   .\build.ps1 check           jar·src/main에 네트워크 관련 API가 없는지 검사 (jdeps, JDK 9 이상)
-  .\build.ps1 test            만들어 둔 jar로 시험만 (JDK 8 이상)
+  .\build.ps1 test            만들어 둔 jar로 시험 + 공개 시험 문서 회귀 시험 (JDK 8 이상)
+  .\build.ps1 regress -Docs <폴더> -Baseline <폴더> [-Out <폴더>]
+                              다른 문서 폴더로 회귀 시험 (저장소 밖 문서도 됨)
+  .\build.ps1 baseline        공개 시험 문서 기준값을 지금 수치로 다시 씀 (-Docs·-Baseline 으로 다른 폴더도)
   .\build.ps1 clean
 
   -JavaHome      빌드할 JDK. 없으면 JAVA_HOME, 그것도 없으면 PATH의 javac
@@ -15,10 +18,13 @@ JDK만으로 빌드·시험 (Maven 없이). Linux·CI는 build.sh
 결과는 build\ (Maven·이클립스의 target\ 과 따로)
 #>
 param(
-    [ValidateSet('all', 'build', 'check', 'test', 'clean')]
+    [ValidateSet('all', 'build', 'check', 'test', 'regress', 'baseline', 'clean')]
     [string]$Task = 'all',
     [string]$JavaHome = $env:JAVA_HOME,
-    [string[]]$TestJavaHome = @()
+    [string[]]$TestJavaHome = @(),
+    [string]$Docs,
+    [string]$Baseline,
+    [string]$Out
 )
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -26,9 +32,10 @@ Set-Location -LiteralPath $PSScriptRoot
 $name = 'hwpx-docx-converter'
 $mainClass = 'io.github.limjaemin99.hwpxdocx.cli.Main'
 $runner = 'io.github.limjaemin99.hwpxdocx.testkit.TestRunner'
+$regression = 'io.github.limjaemin99.hwpxdocx.regress.Regression'
 $version = ([xml](Get-Content -LiteralPath 'pom.xml' -Raw -Encoding UTF8)).project.version
-$out = 'build'
-$jar = "$out/libs/$name-$version.jar"
+$build = 'build'
+$jar = "$build/libs/$name-$version.jar"
 $utf8 = New-Object Text.UTF8Encoding $false
 
 # -File 로 부르면 배열이 한 문자열로 오므로 쉼표로 나눔
@@ -54,23 +61,23 @@ function Write-SourceList([string]$dir, [string]$listFile) {
 }
 
 function Invoke-Clean {
-    if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+    if (Test-Path -LiteralPath $build) { Remove-Item -LiteralPath $build -Recurse -Force }
 }
 
 function Invoke-Build {
-    foreach ($d in "$out/classes", "$out/test-classes", "$out/libs") {
+    foreach ($d in "$build/classes", "$build/test-classes", "$build/libs") {
         if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
     }
-    New-Item -ItemType Directory -Force "$out/classes/META-INF", "$out/test-classes", "$out/libs" | Out-Null
+    New-Item -ItemType Directory -Force "$build/classes/META-INF", "$build/test-classes", "$build/libs" | Out-Null
     $javac = Get-Tool $JavaHome 'javac'
 
-    Write-SourceList 'src/main/java' "$out/main-sources.txt"
+    Write-SourceList 'src/main/java' "$build/main-sources.txt"
     Invoke-Tool $javac @('--release', '8', '-encoding', 'UTF-8', '-Xlint:all,-options',
-        '-d', "$out/classes", "@$out/main-sources.txt")
+        '-d', "$build/classes", "@$build/main-sources.txt")
     if (Test-Path -LiteralPath 'src/main/resources') {
-        Copy-Item -Path 'src/main/resources/*' -Destination "$out/classes" -Recurse -Force
+        Copy-Item -Path 'src/main/resources/*' -Destination "$build/classes" -Recurse -Force
     }
-    Copy-Item -LiteralPath 'LICENSE', 'NOTICE' -Destination "$out/classes/META-INF"
+    Copy-Item -LiteralPath 'LICENSE', 'NOTICE' -Destination "$build/classes/META-INF"
 
     $manifest = @(
         "Main-Class: $mainClass",
@@ -78,14 +85,14 @@ function Invoke-Build {
         "Implementation-Version: $version",
         'Automatic-Module-Name: io.github.limjaemin99.hwpxdocx'
     )
-    [IO.File]::WriteAllLines((Join-Path $PSScriptRoot "$out/MANIFEST.MF"), [string[]]$manifest, $utf8)
-    Invoke-Tool (Get-Tool $JavaHome 'jar') @('cfm', $jar, "$out/MANIFEST.MF", '-C', "$out/classes", '.')
+    [IO.File]::WriteAllLines((Join-Path $PSScriptRoot "$build/MANIFEST.MF"), [string[]]$manifest, $utf8)
+    Invoke-Tool (Get-Tool $JavaHome 'jar') @('cfm', $jar, "$build/MANIFEST.MF", '-C', "$build/classes", '.')
 
-    Write-SourceList 'src/test/java' "$out/test-sources.txt"
+    Write-SourceList 'src/test/java' "$build/test-sources.txt"
     Invoke-Tool $javac @('--release', '8', '-encoding', 'UTF-8', '-Xlint:all,-options',
-        '-cp', $jar, '-d', "$out/test-classes", "@$out/test-sources.txt")
+        '-cp', $jar, '-d', "$build/test-classes", "@$build/test-sources.txt")
     if (Test-Path -LiteralPath 'src/test/resources') {
-        Copy-Item -Path 'src/test/resources/*' -Destination "$out/test-classes" -Recurse -Force
+        Copy-Item -Path 'src/test/resources/*' -Destination "$build/test-classes" -Recurse -Force
     }
     Write-Host "jar: $jar"
 }
@@ -115,9 +122,22 @@ function Invoke-Test {
     foreach ($h in $homes) {
         $java = Get-Tool $h 'java'
         Write-Host "== $java"
-        Invoke-Tool $java @('-cp', "$jar;$out/test-classes", $runner, "$out/test-classes")
+        Invoke-Tool $java @('-cp', "$jar;$build/test-classes", $runner, "$build/test-classes")
+        Invoke-Tool $java @('-cp', "$jar;$build/test-classes", $regression,
+            '--docs', "$build/test-classes/docs", '--baseline', "$build/test-classes/baseline")
         Invoke-Tool $java @('-jar', $jar, '--version')
     }
+}
+
+# 저장소 밖 문서·기준값도 폴더만 주면 같은 실행기로 돎
+function Invoke-Regress([bool]$update) {
+    if (-not (Test-Path -LiteralPath "$build/test-classes")) { throw "시험 클래스가 없음 (먼저 .\build.ps1 build)" }
+    $d = if ($Docs) { $Docs } else { 'src/test/resources/docs' }
+    $b = if ($Baseline) { $Baseline } else { 'src/test/resources/baseline' }
+    $arguments = @('-cp', "$jar;$build/test-classes", $regression, '--docs', $d, '--baseline', $b)
+    if ($Out) { $arguments += @('--out', $Out) }
+    if ($update) { $arguments += '--update' }
+    Invoke-Tool (Get-Tool $JavaHome 'java') $arguments
 }
 
 switch ($Task) {
@@ -125,5 +145,7 @@ switch ($Task) {
     'build' { Invoke-Build }
     'check' { Invoke-Check }
     'test' { Invoke-Test }
+    'regress' { Invoke-Regress $false }
+    'baseline' { Invoke-Regress $true }
     'clean' { Invoke-Clean }
 }

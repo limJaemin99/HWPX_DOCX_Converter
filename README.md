@@ -79,6 +79,18 @@ sha256sum -c hwpx-docx-converter-<버전>.jar.sha256
 - 다른 JDK에서 시험: `build.ps1 -TestJavaHome <JDK 8 경로>,<JDK 17 경로>` / `JAVA_HOME=<JDK 경로> bash build.sh test`
 - 시험은 JUnit 없이 `src/test/java/.../testkit`의 작은 실행기로 돕니다
 
+### 회귀 시험
+
+`test` 단계에서 `src/test/resources/docs/`의 HWPX·DOCX를 모두 반대 형식으로 바꾸고, 문서마다 글자 수(공백 제외)·문단·표·그림·건너뛴 요소 수를 `src/test/resources/baseline/regression.tsv`와 비교합니다. 기준값보다 나빠진 문서가 있으면 실패합니다.
+
+| 할 일 | Windows | Linux·macOS |
+|---|---|---|
+| 다른 폴더의 문서로 시험 | `build.ps1 regress -Docs <문서 폴더> -Baseline <기준값 폴더> [-Out <결과 폴더>]` | `bash build.sh regress <문서 폴더> <기준값 폴더> [결과 폴더]` |
+| 기준값을 지금 수치로 갱신 | `build.ps1 baseline` | `bash build.sh baseline` |
+
+- 나빠짐으로 보는 것: 변환 실패, 결과 글자·문단·표·그림 수 감소, 건너뛴 요소 증가, 기준값에 없는 문서, 문서가 없어진 기준값
+- 원본 글자 수가 기준값과 다르면 문서가 바뀐 것이므로 기준값을 갱신합니다
+
 ## 개발 방식
 
 | 브랜치 | 용도 |
