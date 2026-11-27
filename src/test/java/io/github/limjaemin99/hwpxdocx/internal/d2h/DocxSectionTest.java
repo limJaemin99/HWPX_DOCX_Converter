@@ -168,14 +168,74 @@ class DocxSectionTest {
     }
 
     @Test
-    void continuousBreakWarns() throws Exception {
+    void continuousBreakWithSamePageBecomesColumnChange() throws Exception {
         convert(new TestDocx()
                 .bodyWithSection(sect("<w:type w:val=\"continuous\"/>" + PORTRAIT + "<w:cols w:num=\"2\" w:space=\"425\"/>"),
+                        p(sect(PORTRAIT), r("", t("제1조"))),
+                        p("", r("", t("제14조"))),
+                        p("", r("", t("제15조"))))
+                .toBytes());
+        assertEquals(null, hwpx.get("Contents/section1.xml"));
+        assertContains(new String(hwpx.get("Contents/header.xml"), StandardCharsets.UTF_8), "secCnt=\"1\"");
+        NodeList cols = section(0).getElementsByTagNameNS(HP, "colPr");
+        assertEquals(2, cols.getLength());
+        assertEquals("1", ((Element) cols.item(0)).getAttribute("colCount"));
+        Element two = (Element) cols.item(1);
+        assertEquals("2", two.getAttribute("colCount"));
+        assertEquals("2125", two.getAttribute("sameGap"));
+        // 단 설정은 둘째 구역 첫 문단(제14조)의 맨 앞 런에 둠
+        Element p = (Element) two.getParentNode().getParentNode().getParentNode();
+        assertEquals("p", p.getLocalName());
+        assertEquals("제14조", text(p));
+        assertEquals(0, result.getWarnings().size());
+    }
+
+    @Test
+    void continuousBreakWithSameColumnsAddsNothing() throws Exception {
+        convert(new TestDocx()
+                .bodyWithSection(sect("<w:type w:val=\"continuous\"/>" + PORTRAIT),
+                        p(sect(PORTRAIT), r("", t("제1조"))),
+                        p("", r("", t("제2조"))))
+                .toBytes());
+        assertEquals(null, hwpx.get("Contents/section1.xml"));
+        assertEquals(1, section(0).getElementsByTagNameNS(HP, "colPr").getLength());
+    }
+
+    @Test
+    void continuousBreakWithOtherPageStartsNewSection() throws Exception {
+        convert(new TestDocx()
+                .bodyWithSection(sect("<w:type w:val=\"continuous\"/>" + LANDSCAPE + "<w:cols w:num=\"2\" w:space=\"425\"/>"),
                         p(sect(PORTRAIT), r("", t("제1조"))),
                         p("", r("", t("제2조"))))
                 .toBytes());
         assertEquals("2", first(section(1), "colPr").getAttribute("colCount"));
         assertContains(result.getWarnings().toString(), "같은 쪽에서 이어지는 구역 나누기");
+    }
+
+    @Test
+    void continuousBreakWithOwnHeaderStartsNewSection() throws Exception {
+        convert(new TestDocx()
+                .headerFooter("rId20", "header1.xml", "hdr", p("", r("", t("제1장 총강"))))
+                .headerFooter("rId21", "header2.xml", "hdr", p("", r("", t("제2장 국민의 권리와 의무"))))
+                .bodyWithSection(sect("<w:type w:val=\"continuous\"/><w:headerReference w:type=\"default\" r:id=\"rId21\"/>"
+                                + PORTRAIT),
+                        p(sect("<w:headerReference w:type=\"default\" r:id=\"rId20\"/>" + PORTRAIT), r("", t("제1조"))),
+                        p("", r("", t("제10조"))))
+                .toBytes());
+        assertTrue(hwpx.get("Contents/section1.xml") != null);
+    }
+
+    @Test
+    void continuousBreakWithSameHeaderStaysInSection() throws Exception {
+        convert(new TestDocx()
+                .headerFooter("rId20", "header1.xml", "hdr", p("", r("", t("대한민국헌법"))))
+                .bodyWithSection(sect("<w:type w:val=\"continuous\"/><w:headerReference w:type=\"default\" r:id=\"rId20\"/>"
+                                + PORTRAIT + "<w:cols w:num=\"2\"/>"),
+                        p(sect("<w:headerReference w:type=\"default\" r:id=\"rId20\"/>" + PORTRAIT), r("", t("제1조"))),
+                        p("", r("", t("제10조"))))
+                .toBytes());
+        assertEquals(null, hwpx.get("Contents/section1.xml"));
+        assertEquals(1, section(0).getElementsByTagNameNS(HP, "header").getLength());
     }
 
     @Test
