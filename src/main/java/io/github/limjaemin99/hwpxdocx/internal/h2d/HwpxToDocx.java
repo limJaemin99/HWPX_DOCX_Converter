@@ -4,6 +4,7 @@ import io.github.limjaemin99.hwpxdocx.internal.Xml;
 import io.github.limjaemin99.hwpxdocx.ConvertOptions;
 import io.github.limjaemin99.hwpxdocx.internal.ConvertStats;
 import io.github.limjaemin99.hwpxdocx.internal.Converter;
+import io.github.limjaemin99.hwpxdocx.internal.Limits;
 import io.github.limjaemin99.hwpxdocx.internal.docx.DocxSkeleton;
 import io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxHeader;
 import io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxPackage;
@@ -780,8 +781,8 @@ public final class HwpxToDocx implements Converter {
         private void table(Element tbl, String paraJc, StringBuilder out) throws IOException {
             stats.table();
             List<Cell> cells = new ArrayList<Cell>();
-            int rows = HwpxHeader.intAttr(tbl, "rowCnt", 0);
-            int cols = HwpxHeader.intAttr(tbl, "colCnt", 0);
+            long maxRow = HwpxHeader.intAttr(tbl, "rowCnt", 0);
+            long maxCol = HwpxHeader.intAttr(tbl, "colCnt", 0);
             for (Element tr : children(tbl, NS_HP, "tr")) {
                 for (Element tc : children(tr, NS_HP, "tc")) {
                     Cell c = new Cell(tc);
@@ -790,14 +791,17 @@ public final class HwpxToDocx implements Converter {
                         continue;
                     }
                     cells.add(c);
-                    rows = Math.max(rows, c.row + c.rowSpan);
-                    cols = Math.max(cols, c.col + c.colSpan);
+                    maxRow = Math.max(maxRow, (long) c.row + c.rowSpan);
+                    maxCol = Math.max(maxCol, (long) c.col + c.colSpan);
                 }
             }
-            if (rows == 0 || cols == 0) {
+            if (maxRow <= 0 || maxCol <= 0) {
                 stats.warn("칸이 없는 표를 뺌");
                 return;
             }
+            Limits.checkTable(maxRow, maxCol);
+            int rows = (int) maxRow;
+            int cols = (int) maxCol;
             Cell[][] at = new Cell[rows][cols];
             for (Cell c : cells) {
                 if (at[c.row][c.col] != null) {

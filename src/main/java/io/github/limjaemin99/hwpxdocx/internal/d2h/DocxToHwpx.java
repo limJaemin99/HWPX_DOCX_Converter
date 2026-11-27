@@ -3,6 +3,7 @@ package io.github.limjaemin99.hwpxdocx.internal.d2h;
 import io.github.limjaemin99.hwpxdocx.ConvertOptions;
 import io.github.limjaemin99.hwpxdocx.internal.ConvertStats;
 import io.github.limjaemin99.hwpxdocx.internal.Converter;
+import io.github.limjaemin99.hwpxdocx.internal.Limits;
 import io.github.limjaemin99.hwpxdocx.internal.Xml;
 import io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxSkeleton;
 import org.w3c.dom.Element;
@@ -255,7 +256,8 @@ public final class DocxToHwpx implements Converter {
                 rowHeights.add(parseInt(attr(child(trPr, "trHeight"), "val"), 0));
                 Element th = child(trPr, "tblHeader");
                 headerRows.add(th != null && !"0".equals(attr(th, "val")) && !"false".equals(attr(th, "val")));
-                int col = parseInt(attr(child(trPr, "gridBefore"), "val"), 0);
+                int col = Math.max(0, parseInt(attr(child(trPr, "gridBefore"), "val"), 0));
+                Limits.checkTable(row + 1, col);
                 for (Node m = tr.getFirstChild(); m != null; m = m.getNextSibling()) {
                     if (!(m instanceof Element) || !"tc".equals(m.getLocalName())) {
                         continue;
@@ -263,6 +265,7 @@ public final class DocxToHwpx implements Converter {
                     Element tc = (Element) m;
                     Element tcPr = child(tc, "tcPr");
                     int span = Math.max(1, parseInt(attr(child(tcPr, "gridSpan"), "val"), 1));
+                    Limits.checkTable(row + 1, (long) col + span);
                     Element vMerge = child(tcPr, "vMerge");
                     String vm = vMerge == null ? null : attr(vMerge, "val");
                     if (vMerge != null && !"restart".equals(vm)) {
@@ -289,6 +292,7 @@ public final class DocxToHwpx implements Converter {
             for (Cell c : cells) {
                 cols = Math.max(cols, c.col + c.span);
             }
+            Limits.checkTable(rows, cols);
             while (grid.size() < cols) {
                 grid.add(1000);
             }
