@@ -171,6 +171,10 @@ final class Props {
             if (numId != null) {
                 v.put("numId", numId);
             }
+            String ilvl = attr(child(numPr, "ilvl"), "val");
+            if (ilvl != null) {
+                v.put("ilvl", ilvl);
+            }
         }
         return this;
     }

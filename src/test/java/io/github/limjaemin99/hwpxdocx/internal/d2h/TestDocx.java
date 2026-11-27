@@ -72,6 +72,13 @@ final class TestDocx {
         return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
     }
 
+    /** word/numbering.xml을 넣고 본문 관계에 이음. {@code inner}는 w:numbering 안쪽. */
+    TestDocx numbering(String inner) {
+        rels.add(new String[]{"rId8", "numbering", "numbering.xml"});
+        put("word/numbering.xml", "<w:numbering " + W_NS + ">" + inner + "</w:numbering>");
+        return put("word/_rels/document.xml.rels", DocxSkeleton.documentRels(rels));
+    }
+
     TestDocx evenAndOddHeaders() {
         return put("word/settings.xml", DocxSkeleton.settingsXml(true));
     }

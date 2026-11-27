@@ -228,6 +228,13 @@ final class HwpxRefs {
      * @param lineFactor Word 한 줄 높이 ÷ 글자 크기 (글꼴마다 다름)
      */
     int paraId(Props p, double lineFactor) {
+        return paraId(p, lineFactor, NO_HEADING);
+    }
+
+    static final String NO_HEADING = "<hh:heading type=\"NONE\" idRef=\"0\" level=\"0\"/>";
+
+    /** @param heading 문단 번호 hh:heading 요소 ({@link HwpxNumbering}) */
+    int paraId(Props p, double lineFactor, String heading) {
         String align;
         switch (p.get("jc", "left")) {
             case "both":
@@ -277,7 +284,7 @@ final class HwpxRefs {
         b.append(" tabPrIDRef=\"0\" condense=\"0\" fontLineHeight=\"0\" snapToGrid=\"")
                 .append(p.on("snapToGrid", true) ? 1 : 0).append("\" suppressLineNumbers=\"0\" checked=\"0\">")
                 .append("<hh:align horizontal=\"").append(align).append("\" vertical=\"BASELINE\"/>")
-                .append("<hh:heading type=\"NONE\" idRef=\"0\" level=\"0\"/>")
+                .append(heading)
                 .append("<hh:breakSetting breakLatinWord=\"KEEP_WORD\" breakNonLatinWord=\"")
                 .append(p.on("wordWrap", true) ? "KEEP_WORD" : "BREAK_WORD")
                 .append("\" widowOrphan=\"").append(p.on("widowControl") ? 1 : 0)
@@ -385,6 +392,11 @@ final class HwpxRefs {
 
     /** header.xml의 refList 안쪽. */
     String refList() {
+        return refList("");
+    }
+
+    /** @param numbering hh:numberings·hh:bullets (tabProperties와 paraProperties 사이에 들어감) */
+    String refList(String numbering) {
         StringBuilder b = new StringBuilder();
         if (fonts.isEmpty()) {
             font("함초롬바탕");
@@ -411,6 +423,7 @@ final class HwpxRefs {
         b.append("</hh:charProperties>");
         b.append("<hh:tabProperties itemCnt=\"1\"><hh:tabPr id=\"0\" autoTabLeft=\"0\" autoTabRight=\"0\"/>"
                 + "</hh:tabProperties>");
+        b.append(numbering);
         b.append("<hh:paraProperties itemCnt=\"").append(paras.size()).append("\">");
         for (int i = 0; i < paras.size(); i++) {
             b.append("<hh:paraPr id=\"").append(i).append('"').append(paras.get(i)).append("</hh:paraPr>");
