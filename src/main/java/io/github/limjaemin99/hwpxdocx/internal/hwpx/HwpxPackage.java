@@ -36,10 +36,12 @@ public final class HwpxPackage {
 
     private final Map<String, byte[]> entries;
     private final List<String> sections;
+    private final Map<String, String[]> items;
 
-    private HwpxPackage(Map<String, byte[]> entries, List<String> sections) {
+    private HwpxPackage(Map<String, byte[]> entries, List<String> sections, Map<String, String[]> items) {
         this.entries = entries;
         this.sections = sections;
+        this.items = items;
     }
 
     public static HwpxPackage read(InputStream in) throws IOException {
@@ -55,7 +57,7 @@ public final class HwpxPackage {
         if (sections.isEmpty()) {
             throw new ConvertException("HWPX에 구역(Contents/section*.xml)이 없음");
         }
-        return new HwpxPackage(m, sections);
+        return new HwpxPackage(m, sections, manifest(m));
     }
 
     static Map<String, byte[]> unzip(InputStream in, int maxEntries, long maxTotal) throws IOException {
@@ -121,6 +123,24 @@ public final class HwpxPackage {
             }
         }
         return list;
+    }
+
+    // content.hpf manifest: id → {href, media-type}
+    private static Map<String, String[]> manifest(Map<String, byte[]> m) throws ConvertException {
+        Document hpf = SafeXml.parse(new ByteArrayInputStream(m.get("Contents/content.hpf")), "Contents/content.hpf");
+        Map<String, String[]> items = new HashMap<String, String[]>();
+        NodeList list = hpf.getElementsByTagNameNS(NS_OPF, "item");
+        for (int i = 0; i < list.getLength(); i++) {
+            Element it = (Element) list.item(i);
+            items.put(it.getAttribute("id"), new String[]{it.getAttribute("href"), it.getAttribute("media-type")});
+        }
+        return items;
+    }
+
+    /** manifest 항목 {href, media-type}. 없으면 null. */
+    public String[] item(String id) {
+        String[] v = items.get(id);
+        return v == null ? null : v.clone();
     }
 
     public List<String> sections() {

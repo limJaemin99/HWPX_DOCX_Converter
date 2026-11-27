@@ -91,6 +91,29 @@ final class TestHwpx {
                 + "<hp:cellMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/></hp:tc>";
     }
 
+    /** BinData에 파일을 넣고 content.hpf manifest에 등록. */
+    TestHwpx binData(String id, String href, String mediaType, byte[] data) {
+        entries.put(href, data);
+        return put("Contents/content.hpf", get("Contents/content.hpf").replace("<opf:manifest>",
+                "<opf:manifest><opf:item id=\"" + id + "\" href=\"" + href + "\" media-type=\"" + mediaType
+                        + "\" isEmbeded=\"1\"/>"));
+    }
+
+    /** 그림. treatAsChar가 false면 떠 있는 그림(위아래 배치, 쪽 여백 기준). */
+    static String pic(String binId, int width, int height, boolean treatAsChar) {
+        return "<hp:pic id=\"7\" zOrder=\"1\" numberingType=\"PICTURE\" textWrap=\"TOP_AND_BOTTOM\" textFlow=\"BOTH_SIDES\""
+                + " lock=\"0\" dropcapstyle=\"None\" href=\"\" groupLevel=\"0\" instid=\"7\" reverse=\"0\">"
+                + "<hp:offset x=\"0\" y=\"0\"/><hp:orgSz width=\"" + width + "\" height=\"" + height + "\"/>"
+                + "<hp:curSz width=\"" + width + "\" height=\"" + height + "\"/>"
+                + "<hp:flip horizontal=\"0\" vertical=\"0\"/>"
+                + "<hc:img binaryItemIDRef=\"" + binId + "\" bright=\"0\" contrast=\"0\" effect=\"REAL_PIC\" alpha=\"0\"/>"
+                + "<hp:sz width=\"" + width + "\" widthRelTo=\"ABSOLUTE\" height=\"" + height + "\" heightRelTo=\"ABSOLUTE\" protect=\"0\"/>"
+                + "<hp:pos treatAsChar=\"" + (treatAsChar ? 1 : 0) + "\" affectLSpacing=\"0\" flowWithText=\"1\" allowOverlap=\"0\""
+                + " holdAnchorAndSO=\"0\" vertRelTo=\"PARA\" horzRelTo=\"PAGE\" vertAlign=\"TOP\" horzAlign=\"CENTER\""
+                + " vertOffset=\"1000\" horzOffset=\"0\"/>"
+                + "<hp:outMargin left=\"0\" right=\"0\" top=\"0\" bottom=\"0\"/></hp:pic>";
+    }
+
     TestHwpx paraPrs(String... paraPr) {
         return replaceBlock("Contents/header.xml", "paraProperties", String.join("", paraPr), paraPr.length);
     }
