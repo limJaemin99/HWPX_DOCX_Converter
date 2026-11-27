@@ -22,7 +22,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.NS_W;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.attr;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.child;
 
-/** DOCX → HWPX. 지금은 본문 문단의 글자·문단 모양까지 옮긴다. 변환 한 번마다 새로 만든다. */
+/** DOCX → HWPX. 지금은 본문 문단(글자·문단 모양)과 표를 옮긴다. 변환 한 번마다 새로 만든다. */
 public final class DocxToHwpx implements Converter {
 
     // Word 한 줄 높이 ÷ 글자 크기 (Word에서 잰 값). 배수 줄 간격을 한컴 비율로 바꿀 때 씀. 없는 글꼴은 평균값
@@ -99,6 +99,8 @@ public final class DocxToHwpx implements Converter {
         final DocxStyles styles;
         final ConvertStats stats;
         final HwpxRefs refs = new HwpxRefs();
+        // 표·그림 등 개체 ID. 문서 안에서 겹치지 않으면 됨
+        int nextObjectId = 1000;
 
         Run(DocxStyles styles, ConvertStats stats) {
             this.styles = styles;
@@ -130,6 +132,8 @@ public final class DocxToHwpx implements Converter {
                     skip(e);
                 } else if ("p".equals(name)) {
                     paragraph(e, out);
+                } else if ("tbl".equals(name)) {
+                    table(e, out);
                 } else if ("sdt".equals(name)) {
                     Element content = child(e, "sdtContent");
                     if (content != null) {
@@ -137,11 +141,230 @@ public final class DocxToHwpx implements Converter {
                     }
                 } else if ("customXml".equals(name)) {
                     blocks(e, out);
-                } else if (!"sectPr".equals(name) && !"bookmarkStart".equals(name) && !"bookmarkEnd".equals(name)
-                        && !"proofErr".equals(name) && !"permStart".equals(name) && !"permEnd".equals(name)) {
+                } else if (!"sectPr".equals(name) && !"tcPr".equals(name) && !"bookmarkStart".equals(name)
+                        && !"bookmarkEnd".equals(name) && !"proofErr".equals(name) && !"permStart".equals(name)
+                        && !"permEnd".equals(name)) {
                     // 구역 설정(sectPr)은 쪽 설정 변환에서 다룸
                     skip(e);
                 }
+            }
+        }
+
+        // ---------- 표 ----------
+
+        /** Word 표 칸. 세로로 합친 칸은 처음 칸 하나로 모으고 rowSpan을 늘린다. */
+        private static final class Cell {
+            final Element tc;
+            final int row;
+            final int col;
+            final int span;
+            int rowSpan = 1;
+
+            Cell(Element tc, int row, int col, int span) {
+                this.tc = tc;
+                this.row = row;
+                this.col = col;
+                this.span = span;
+            }
+        }
+
+        /** 표는 한컴에서 문단 안 글자처럼 취급하는 개체라 표 하나를 문단 하나에 담는다. */
+        void table(Element tbl, List<String> out) throws IOException {
+            stats.table();
+            Element tblPr = child(tbl, "tblPr");
+            String styleId = attr(child(tblPr, "tblStyle"), "val");
+            Map<String, Element> tableBorders = styles.tableBorders(styleId);
+            DocxStyles.putChildren(tableBorders, child(tblPr, "tblBorders"));
+            Map<String, Integer> margins = styles.tableCellMargins(styleId);
+            DocxStyles.putMargins(margins, child(tblPr, "tblCellMar"));
+
+            List<Integer> grid = new ArrayList<Integer>();
+            Element tblGrid = child(tbl, "tblGrid");
+            if (tblGrid != null) {
+                for (Node n = tblGrid.getFirstChild(); n != null; n = n.getNextSibling()) {
+                    if (n instanceof Element && "gridCol".equals(n.getLocalName())) {
+                        grid.add(Math.max(0, parseInt(attr((Element) n, "w"), 0)));
+                    }
+                }
+            }
+
+            List<Cell> cells = new ArrayList<Cell>();
+            List<Integer> rowHeights = new ArrayList<Integer>();
+            List<Boolean> headerRows = new ArrayList<Boolean>();
+            Map<Integer, Cell> openV = new HashMap<Integer, Cell>();
+            int row = 0;
+            for (Node n = tbl.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (!(n instanceof Element) || !"tr".equals(n.getLocalName())) {
+                    continue;
+                }
+                Element tr = (Element) n;
+                Element trPr = child(tr, "trPr");
+                rowHeights.add(parseInt(attr(child(trPr, "trHeight"), "val"), 0));
+                Element th = child(trPr, "tblHeader");
+                headerRows.add(th != null && !"0".equals(attr(th, "val")) && !"false".equals(attr(th, "val")));
+                int col = parseInt(attr(child(trPr, "gridBefore"), "val"), 0);
+                for (Node m = tr.getFirstChild(); m != null; m = m.getNextSibling()) {
+                    if (!(m instanceof Element) || !"tc".equals(m.getLocalName())) {
+                        continue;
+                    }
+                    Element tc = (Element) m;
+                    Element tcPr = child(tc, "tcPr");
+                    int span = Math.max(1, parseInt(attr(child(tcPr, "gridSpan"), "val"), 1));
+                    Element vMerge = child(tcPr, "vMerge");
+                    String vm = vMerge == null ? null : attr(vMerge, "val");
+                    if (vMerge != null && !"restart".equals(vm)) {
+                        Cell top = openV.get(col);
+                        if (top != null) {
+                            top.rowSpan++;
+                        }
+                        col += span;
+                        continue;
+                    }
+                    Cell c = new Cell(tc, row, col, span);
+                    cells.add(c);
+                    if ("restart".equals(vm)) {
+                        openV.put(col, c);
+                    } else {
+                        openV.remove(col);
+                    }
+                    col += span;
+                }
+                row++;
+            }
+            int rows = row;
+            int cols = grid.size();
+            for (Cell c : cells) {
+                cols = Math.max(cols, c.col + c.span);
+            }
+            while (grid.size() < cols) {
+                grid.add(1000);
+            }
+            if (rows == 0 || cols == 0) {
+                stats.warn("칸이 없는 표를 뺌");
+                return;
+            }
+
+            boolean anyHeader = false;
+            int height = 0;
+            for (int r = 0; r < rows; r++) {
+                anyHeader |= headerRows.get(r);
+                height += rowHeight(rowHeights.get(r));
+            }
+            int width = 0;
+            for (int w : grid) {
+                width += w * 5;
+            }
+            StringBuilder b = new StringBuilder();
+            b.append("<hp:tbl id=\"").append(nextObjectId++).append("\" zOrder=\"0\" numberingType=\"TABLE\"")
+                    .append(" textWrap=\"TOP_AND_BOTTOM\" textFlow=\"BOTH_SIDES\" lock=\"0\" dropcapstyle=\"None\"")
+                    .append(" pageBreak=\"CELL\" repeatHeader=\"").append(anyHeader ? 1 : 0)
+                    .append("\" rowCnt=\"").append(rows).append("\" colCnt=\"").append(cols)
+                    .append("\" cellSpacing=\"0\" borderFillIDRef=\"1\" noAdjust=\"0\">")
+                    .append("<hp:sz width=\"").append(width).append("\" widthRelTo=\"ABSOLUTE\" height=\"").append(height)
+                    .append("\" heightRelTo=\"ABSOLUTE\" protect=\"0\"/>")
+                    .append("<hp:pos treatAsChar=\"1\" affectLSpacing=\"0\" flowWithText=\"1\" allowOverlap=\"0\"")
+                    .append(" holdAnchorAndSO=\"0\" vertRelTo=\"PARA\" horzRelTo=\"COLUMN\" vertAlign=\"TOP\" horzAlign=\"LEFT\"")
+                    .append(" vertOffset=\"0\" horzOffset=\"0\"/>")
+                    .append("<hp:outMargin left=\"0\" right=\"0\" top=\"0\" bottom=\"0\"/>")
+                    .append("<hp:inMargin").append(marginAttrs(margins)).append("/>");
+            for (int r = 0; r < rows; r++) {
+                b.append("<hp:tr>");
+                for (Cell c : cells) {
+                    if (c.row == r) {
+                        cell(c, rows, cols, grid, rowHeights, headerRows.get(r), tableBorders, margins, b);
+                    }
+                }
+                b.append("</hp:tr>");
+            }
+            b.append("</hp:tbl>");
+
+            // 표를 담는 문단: 표 정렬·들여쓰기를 문단 정렬·여백으로
+            Props wp = new Props();
+            String jc = attr(child(tblPr, "jc"), "val");
+            wp.v.put("jc", "center".equals(jc) ? "center" : "right".equals(jc) || "end".equals(jc) ? "right" : "left");
+            Element ind = child(tblPr, "tblInd");
+            if (ind != null && (attr(ind, "type") == null || "dxa".equals(attr(ind, "type")))) {
+                wp.v.put("left", String.valueOf(parseInt(attr(ind, "w"), 0)));
+            }
+            int paraId = refs.paraId(wp, 1.0);
+            out.add("<hp:p id=\"0\" paraPrIDRef=\"" + paraId + "\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\""
+                    + " merged=\"0\"><hp:run charPrIDRef=\"0\">" + b + "<hp:t/></hp:run></hp:p>");
+        }
+
+        // 한컴 칸 높이는 최소 높이로 쓰임. 높이를 적지 않은 행은 한 줄 정도로 둠
+        private static int rowHeight(int twip) {
+            return Math.max(twip * 5, 1000);
+        }
+
+        private void cell(Cell c, int rows, int cols, List<Integer> grid, List<Integer> rowHeights, boolean header,
+                          Map<String, Element> tableBorders, Map<String, Integer> tableMargins, StringBuilder b)
+                throws IOException {
+            Element tcPr = child(c.tc, "tcPr");
+            Map<String, Element> own = new HashMap<String, Element>();
+            DocxStyles.putChildren(own, child(tcPr, "tcBorders"));
+            // 칸 테두리: 표 가장자리면 표의 바깥 선, 안쪽이면 insideH·insideV, 칸에 직접 정한 선이 우선
+            String top = border(own, tableBorders, "top", c.row == 0 ? "top" : "insideH");
+            String bottom = border(own, tableBorders, "bottom", c.row + c.rowSpan >= rows ? "bottom" : "insideH");
+            String left = border(own, tableBorders, "left", c.col == 0 ? "left" : "insideV");
+            String right = border(own, tableBorders, "right", c.col + c.span >= cols ? "right" : "insideV");
+            String fill = HwpxRefs.color(attr(child(tcPr, "shd"), "fill"), null);
+            int bf = refs.borderFill(top, left, bottom, right, fill);
+
+            String va = attr(child(tcPr, "vAlign"), "val");
+            Map<String, Integer> margins = new HashMap<String, Integer>(tableMargins);
+            Element ownMar = child(tcPr, "tcMar");
+            DocxStyles.putMargins(margins, ownMar);
+
+            List<String> inner = new ArrayList<String>();
+            blocks(c.tc, inner);
+            if (inner.isEmpty()) {
+                inner.add("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
+                        + "<hp:run charPrIDRef=\"0\"/></hp:p>");
+            }
+            int width = 0;
+            for (int i = c.col; i < c.col + c.span; i++) {
+                width += grid.get(i) * 5;
+            }
+            int height = 0;
+            for (int r = c.row; r < Math.min(rows, c.row + c.rowSpan); r++) {
+                height += rowHeight(rowHeights.get(r));
+            }
+            b.append("<hp:tc name=\"\" header=\"").append(header ? 1 : 0).append("\" hasMargin=\"")
+                    .append(ownMar != null ? 1 : 0).append("\" protect=\"0\" editable=\"0\" dirty=\"0\" borderFillIDRef=\"")
+                    .append(bf).append("\"><hp:subList id=\"\" textDirection=\"HORIZONTAL\" lineWrap=\"BREAK\" vertAlign=\"")
+                    .append("center".equals(va) ? "CENTER" : "bottom".equals(va) ? "BOTTOM" : "TOP")
+                    .append("\" linkListIDRef=\"0\" linkListNextIDRef=\"0\" textWidth=\"0\" textHeight=\"0\"")
+                    .append(" hasTextRef=\"0\" hasNumRef=\"0\">");
+            for (String p : inner) {
+                b.append(p);
+            }
+            b.append("</hp:subList><hp:cellAddr colAddr=\"").append(c.col).append("\" rowAddr=\"").append(c.row)
+                    .append("\"/><hp:cellSpan colSpan=\"").append(c.span).append("\" rowSpan=\"").append(c.rowSpan)
+                    .append("\"/><hp:cellSz width=\"").append(width).append("\" height=\"").append(height)
+                    .append("\"/><hp:cellMargin").append(marginAttrs(margins)).append("/></hp:tc>");
+        }
+
+        private static String border(Map<String, Element> own, Map<String, Element> table, String side, String tableKey) {
+            Element e = own.containsKey(side) ? own.get(side) : table.get(tableKey);
+            if (e == null) {
+                return HwpxRefs.NO_LINE;
+            }
+            return HwpxRefs.line(attr(e, "val"), attr(e, "sz"), attr(e, "color"));
+        }
+
+        private static String marginAttrs(Map<String, Integer> m) {
+            return " left=\"" + m.get("left") * 5 + "\" right=\"" + m.get("right") * 5 + "\" top=\"" + m.get("top") * 5
+                    + "\" bottom=\"" + m.get("bottom") * 5 + "\"";
+        }
+
+        private static int parseInt(String s, int def) {
+            if (s == null) {
+                return def;
+            }
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException e) {
+                return def;
             }
         }
 

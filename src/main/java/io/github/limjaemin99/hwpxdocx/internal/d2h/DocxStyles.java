@@ -46,6 +46,7 @@ final class DocxStyles {
     private Element defaultPPr;
     private final Map<String, Element> styles = new HashMap<String, Element>();
     private String defaultParagraphStyle;
+    private String defaultTableStyle;
     private final Map<String, String> theme = new HashMap<String, String>();
 
     DocxStyles(DocxPackage pkg) throws ConvertException {
@@ -61,8 +62,11 @@ final class DocxStyles {
                 String id = s.getAttributeNS(NS_W, "styleId");
                 styles.put(id, s);
                 String def = s.getAttributeNS(NS_W, "default");
-                if ("paragraph".equals(s.getAttributeNS(NS_W, "type")) && ("1".equals(def) || "true".equals(def))) {
+                boolean isDefault = "1".equals(def) || "true".equals(def);
+                if (isDefault && "paragraph".equals(s.getAttributeNS(NS_W, "type"))) {
                     defaultParagraphStyle = id;
+                } else if (isDefault && "table".equals(s.getAttributeNS(NS_W, "type"))) {
+                    defaultTableStyle = id;
                 }
             }
         }
@@ -130,6 +134,63 @@ final class DocxStyles {
             r.applyRun(child(s, "rPr"));
         }
         return new Props[]{p, r};
+    }
+
+    /** 표 스타일 사슬의 표 테두리(w:tblBorders 안 top·insideH 등)를 이름별로 모음. 뒤의 것이 덮어씀. */
+    Map<String, Element> tableBorders(String styleId) {
+        Map<String, Element> m = new HashMap<String, Element>();
+        for (Element s : chain(styleId != null && styles.containsKey(styleId) ? styleId : defaultTableStyle)) {
+            putChildren(m, child(child(s, "tblPr"), "tblBorders"));
+        }
+        return m;
+    }
+
+    /** 표 스타일 사슬의 칸 안쪽 여백(twip). Word 기본값은 좌우 108 (0.19 cm). */
+    Map<String, Integer> tableCellMargins(String styleId) {
+        Map<String, Integer> m = new HashMap<String, Integer>();
+        m.put("top", 0);
+        m.put("bottom", 0);
+        m.put("left", 108);
+        m.put("right", 108);
+        for (Element s : chain(styleId != null && styles.containsKey(styleId) ? styleId : defaultTableStyle)) {
+            putMargins(m, child(child(s, "tblPr"), "tblCellMar"));
+        }
+        return m;
+    }
+
+    /** 자식 요소를 이름별로 넣음. start·end는 left·right로 맞춤. */
+    static void putChildren(Map<String, Element> m, Element parent) {
+        if (parent == null) {
+            return;
+        }
+        for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n instanceof Element && NS_W.equals(n.getNamespaceURI())) {
+                m.put(side(n.getLocalName()), (Element) n);
+            }
+        }
+    }
+
+    static void putMargins(Map<String, Integer> m, Element mar) {
+        if (mar == null) {
+            return;
+        }
+        for (Node n = mar.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n instanceof Element && NS_W.equals(n.getNamespaceURI())) {
+                String w = attr((Element) n, "w");
+                String type = attr((Element) n, "type");
+                if (w != null && (type == null || "dxa".equals(type))) {
+                    try {
+                        m.put(side(n.getLocalName()), Integer.parseInt(w));
+                    } catch (NumberFormatException ignored) {
+                        // 숫자가 아닌 값은 무시
+                    }
+                }
+            }
+        }
+    }
+
+    private static String side(String local) {
+        return "start".equals(local) ? "left" : "end".equals(local) ? "right" : local;
     }
 
     /** 글자 스타일(w:rStyle) 사슬을 덮어씀. */
