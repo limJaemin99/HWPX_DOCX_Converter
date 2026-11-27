@@ -1082,11 +1082,16 @@ public final class DocxToHwpx implements Converter {
                 skip(drawing);
                 return;
             }
-            String binId = binItem(((Element) blips.item(0)).getAttributeNS(NS_R, "embed"), drawing);
+            Element blip = (Element) blips.item(0);
+            String binId = binItem(blip.getAttributeNS(NS_R, "embed"), drawing);
             if (binId == null) {
                 return;
             }
             stats.picture();
+            // Word '희미하게'는 a:lum bright="70000" contrast="-70000"
+            Element lum = childNs(blip, NS_A, "lum");
+            boolean washout = lum != null && parseLong(lum.getAttribute("bright")) > 0
+                    && parseLong(lum.getAttribute("contrast")) < 0;
             Element extent = childNs(node, NS_WP, "extent");
             // EMU ÷ 127 = HWPUNIT
             int w = (int) Math.max(1, parseLong(extent == null ? null : extent.getAttribute("cx")) / 127);
@@ -1112,7 +1117,7 @@ public final class DocxToHwpx implements Converter {
                     wrap = "TOP_AND_BOTTOM";
                 }
             }
-            items.add(new Item(rd, Item.OBJECT, picXml(binId, w, h, pos, wrap)));
+            items.add(new Item(rd, Item.OBJECT, picXml(binId, w, h, pos, wrap, washout)));
         }
 
         /** Word 2007 형식 그림: w:pict 안 v:shape + v:imagedata. 그림 워터마크도 이 형식으로 머리말에 들어감. */
@@ -1130,8 +1135,12 @@ public final class DocxToHwpx implements Converter {
                 return;
             }
             stats.picture();
-            if (!img.getAttribute("gain").isEmpty() || !img.getAttribute("blacklevel").isEmpty()) {
-                stats.warn("그림 흐리게(워터마크) 효과는 아직 옮기지 않음");
+            String gain = img.getAttribute("gain");
+            String black = img.getAttribute("blacklevel");
+            boolean washout = !gain.isEmpty() || !black.isEmpty();
+            // Word '희미하게'는 gain="19661f" blacklevel="22938f". 다른 밝기·대비 값은 대응값이 없어 같은 효과로 둠
+            if (washout && !("19661f".equals(gain) && "22938f".equals(black))) {
+                stats.warn("그림 밝기·대비 값은 한글 워터마크 효과로 바꿈");
             }
             Element shape = (Element) img.getParentNode();
             Map<String, String> st = vmlStyle(shape.getAttribute("style"));
@@ -1163,7 +1172,7 @@ public final class DocxToHwpx implements Converter {
                 pos = INLINE_POS;
                 wrap = "TOP_AND_BOTTOM";
             }
-            items.add(new Item(rd, Item.OBJECT, picXml(binId, w, h, pos, wrap)));
+            items.add(new Item(rd, Item.OBJECT, picXml(binId, w, h, pos, wrap, washout)));
         }
 
         /** 관계 ID의 그림을 BinData에 넣고 그 ID를 돌려준다. 못 쓰는 그림이면 경고·건너뜀을 남기고 null. */
@@ -1212,7 +1221,8 @@ public final class DocxToHwpx implements Converter {
             return "page".equals(word) ? "PAPER" : "margin".equals(word) ? "PAGE" : def;
         }
 
-        private String picXml(String binId, int w, int h, String pos, String wrap) {
+        /** @param washout 흐리게: 한글 '워터마크 효과'가 저장하는 값(밝기 70, 대비 -50)을 씀 */
+        private String picXml(String binId, int w, int h, String pos, String wrap, boolean washout) {
             int id = nextObjectId++;
             return "<hp:pic id=\"" + id + "\" zOrder=\"" + id + "\" numberingType=\"PICTURE\" textWrap=\"" + wrap
                     + "\" textFlow=\"BOTH_SIDES\" lock=\"0\" dropcapstyle=\"None\" href=\"\" groupLevel=\"0\" instid=\"" + id
@@ -1223,7 +1233,8 @@ public final class DocxToHwpx implements Converter {
                     + "<hp:renderingInfo><hc:transMatrix e1=\"1\" e2=\"0\" e3=\"0\" e4=\"0\" e5=\"1\" e6=\"0\"/>"
                     + "<hc:scaMatrix e1=\"1\" e2=\"0\" e3=\"0\" e4=\"0\" e5=\"1\" e6=\"0\"/>"
                     + "<hc:rotMatrix e1=\"1\" e2=\"0\" e3=\"0\" e4=\"0\" e5=\"1\" e6=\"0\"/></hp:renderingInfo>"
-                    + "<hc:img binaryItemIDRef=\"" + binId + "\" bright=\"0\" contrast=\"0\" effect=\"REAL_PIC\" alpha=\"0\"/>"
+                    + "<hc:img binaryItemIDRef=\"" + binId + "\" bright=\"" + (washout ? 70 : 0) + "\" contrast=\""
+                    + (washout ? -50 : 0) + "\" effect=\"REAL_PIC\" alpha=\"0\"/>"
                     + "<hp:imgRect><hc:pt0 x=\"0\" y=\"0\"/><hc:pt1 x=\"" + w + "\" y=\"0\"/><hc:pt2 x=\"" + w + "\" y=\"" + h
                     + "\"/><hc:pt3 x=\"0\" y=\"" + h + "\"/></hp:imgRect>"
                     + "<hp:imgClip left=\"0\" right=\"" + w + "\" top=\"0\" bottom=\"" + h + "\"/>"

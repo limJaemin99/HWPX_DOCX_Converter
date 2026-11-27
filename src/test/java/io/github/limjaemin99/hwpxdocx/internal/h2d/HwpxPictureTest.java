@@ -23,6 +23,7 @@ import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.para;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.pic;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.run;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.t;
+import static io.github.limjaemin99.hwpxdocx.testkit.Assert.assertContains;
 import static io.github.limjaemin99.hwpxdocx.testkit.Assert.assertEquals;
 import static io.github.limjaemin99.hwpxdocx.testkit.Assert.assertTrue;
 
@@ -153,5 +154,45 @@ class HwpxPictureTest {
         assertEquals(0, result.getPictureCount());
         assertEquals(Integer.valueOf(2), result.getSkipped().get("hp:pic"));
         assertEquals(2, result.getWarnings().size());
+    }
+
+    @Test
+    void watermarkEffectBecomesWashout() throws Exception {
+        String wm = pic("image1", 7200, 3600, true).replace("bright=\"0\" contrast=\"0\"", "bright=\"70\" contrast=\"-50\"");
+        convert(new TestHwpx().binData("image1", "BinData/image1.png", "image/png", png())
+                .paragraphs(para("0", run("0", wm))).toBytes());
+        Document doc = xml("word/document.xml");
+        Element lum = first(doc, A, "lum");
+        assertTrue(lum != null);
+        assertEquals("70000", lum.getAttribute("bright"));
+        assertEquals("-70000", lum.getAttribute("contrast"));
+        assertEquals(0, result.getWarnings().size());
+        // 다시 HWPX로: 워터마크 값이 돌아옴
+        ByteArrayOutputStream back = new ByteArrayOutputStream();
+        HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(zipOut()), back, null);
+        String sec = new String(io.github.limjaemin99.hwpxdocx.internal.ZipReader.unzip(
+                new ByteArrayInputStream(back.toByteArray())).get("Contents/section0.xml"), java.nio.charset.StandardCharsets.UTF_8);
+        assertContains(sec, "bright=\"70\" contrast=\"-50\"");
+    }
+
+    @Test
+    void otherBrightnessKeepsColorsWithWarning() throws Exception {
+        String p = pic("image1", 7200, 3600, true).replace("bright=\"0\"", "bright=\"20\"");
+        convert(new TestHwpx().binData("image1", "BinData/image1.png", "image/png", png())
+                .paragraphs(para("0", run("0", p))).toBytes());
+        assertEquals(null, first(xml("word/document.xml"), A, "lum"));
+        assertContains(result.getWarnings().toString(), "워터마크 효과 값만");
+    }
+
+    private byte[] zipOut() throws Exception {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(o)) {
+            for (Map.Entry<String, byte[]> e : out.entrySet()) {
+                z.putNextEntry(new java.util.zip.ZipEntry(e.getKey()));
+                z.write(e.getValue());
+                z.closeEntry();
+            }
+        }
+        return o.toByteArray();
     }
 }
