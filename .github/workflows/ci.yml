@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (JDK 17, release 8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: 빌드 (build.sh)
+        run: bash build.sh build
+      - name: pom.xml 빌드 확인
+        run: mvn -B -ntp -q package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build
+          path: |
+            build/libs/
+            build/test-classes/
+          if-no-files-found: error
+          retention-days: 14
+
+  test:
+    name: test (JDK ${{ matrix.java }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['8', '17', '21']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: build
+          path: build
+      - name: 시험 (JDK 17에서 만든 jar를 그대로 씀)
+        run: bash build.sh test
+
+  # 보호 규칙의 필수 검사는 이것 하나. 앞 작업이 실패해 건너뛰어져도 실패로 남도록 always()로 돌림
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 결과 모으기
+        env:
+          BUILD: ${{ needs.build.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "build=$BUILD test=$TEST"
+          test "$BUILD" = success && test "$TEST" = success
