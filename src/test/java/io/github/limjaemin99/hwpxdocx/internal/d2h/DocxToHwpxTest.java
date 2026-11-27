@@ -301,9 +301,9 @@ class DocxToHwpxTest {
         convert(new TestDocx().body(
                 p("<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>",
                         r("<w:vanish/>", t("숨김")), r("", t("보임")), "<w:del><w:r><w:delText>지움</w:delText></w:r></w:del>"),
-                "<w:tbl><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>").toBytes());
+                p("", r("", "<w:drawing/>"))).toBytes());
         assertEquals("보임", text(paras().get(0)));
-        assertEquals(Integer.valueOf(1), result.getSkipped().get("w:tbl"));
+        assertEquals(Integer.valueOf(1), result.getSkipped().get("w:drawing"));
         assertContains(result.getWarnings().toString(), "자동 번호");
         assertContains(result.getWarnings().toString(), "변경 추적");
     }

@@ -41,6 +41,123 @@ final class HwpxRefs {
     private final Map<String, Integer> charIds = new HashMap<String, Integer>();
     private final List<String> paras = new ArrayList<String>();
     private final Map<String, Integer> paraIds = new HashMap<String, Integer>();
+    private final List<String> borders = new ArrayList<String>();
+    private final Map<String, Integer> borderIds = new HashMap<String, Integer>();
+
+    static final String NO_LINE = "NONE";
+
+    HwpxRefs() {
+        // ID 1: 테두리·배경 없음 (글자 모양·문단 테두리가 가리킴)
+        borderFill(NO_LINE, NO_LINE, NO_LINE, NO_LINE, null);
+    }
+
+    /**
+     * 테두리·배경 ID (1부터).
+     *
+     * @param top    선 하나: {@link #NO_LINE} 또는 {@link #line} 결과
+     * @param fill   채우기 색 RRGGBB, 없으면 null
+     */
+    int borderFill(String top, String left, String bottom, String right, String fill) {
+        StringBuilder b = new StringBuilder(" threeD=\"0\" shadow=\"0\" centerLine=\"NONE\" breakCellSeparateLine=\"0\">"
+                + "<hh:slash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>"
+                + "<hh:backSlash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>");
+        side(b, "leftBorder", left);
+        side(b, "rightBorder", right);
+        side(b, "topBorder", top);
+        side(b, "bottomBorder", bottom);
+        b.append("<hh:diagonal type=\"SOLID\" width=\"0.1 mm\" color=\"#000000\"/>");
+        if (fill != null) {
+            b.append("<hc:fillBrush><hc:winBrush faceColor=\"#").append(fill)
+                    .append("\" hatchColor=\"#000000\" alpha=\"0\"/></hc:fillBrush>");
+        }
+        Integer id = borderIds.get(b.toString());
+        if (id == null) {
+            borders.add(b.toString());
+            id = borders.size();
+            borderIds.put(b.toString(), id);
+        }
+        return id;
+    }
+
+    private static void side(StringBuilder b, String tag, String line) {
+        if (NO_LINE.equals(line)) {
+            b.append("<hh:").append(tag).append(" type=\"NONE\" width=\"0.1 mm\" color=\"#000000\"/>");
+        } else {
+            b.append("<hh:").append(tag).append(' ').append(line).append("/>");
+        }
+    }
+
+    // 한컴이 쓰는 선 굵기 (mm)
+    private static final double[] LINE_MM = {0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0};
+
+    /**
+     * Word 선(w:val·w:sz·w:color) → 한컴 선 속성. 선이 없으면 {@link #NO_LINE}.
+     * Word 굵기는 1/8 pt라 mm로 바꾼 뒤 한컴이 쓰는 굵기 중 가장 가까운 값으로 맞춤.
+     */
+    static String line(String val, String sz, String color) {
+        if (val == null || "nil".equals(val) || "none".equals(val)) {
+            return NO_LINE;
+        }
+        double mm = (sz == null ? 4 : parse(sz, 4)) / 8.0 * 25.4 / 72;
+        double best = LINE_MM[0];
+        for (double c : LINE_MM) {
+            if (Math.abs(c - mm) < Math.abs(best - mm)) {
+                best = c;
+            }
+        }
+        String type;
+        switch (val) {
+            case "dashed":
+            case "dashSmallGap":
+                type = "DASH";
+                break;
+            case "dotted":
+                type = "DOT";
+                break;
+            case "dotDash":
+                type = "DASH_DOT";
+                break;
+            case "dotDotDash":
+                type = "DASH_DOT_DOT";
+                break;
+            case "double":
+                type = "DOUBLE_SLIM";
+                break;
+            case "thinThickSmallGap":
+            case "thinThickMediumGap":
+            case "thinThickLargeGap":
+                type = "SLIM_THICK";
+                break;
+            case "thickThinSmallGap":
+            case "thickThinMediumGap":
+            case "thickThinLargeGap":
+                type = "THICK_SLIM";
+                break;
+            case "thinThickThinSmallGap":
+            case "thinThickThinMediumGap":
+            case "thinThickThinLargeGap":
+                type = "SLIM_THICK_SLIM";
+                break;
+            case "wave":
+                type = "WAVE";
+                break;
+            case "doubleWave":
+                type = "DOUBLE_WAVE";
+                break;
+            default:
+                type = "SOLID";
+        }
+        String w = best == Math.floor(best) ? String.valueOf((int) best) : String.valueOf(best);
+        return "type=\"" + type + "\" width=\"" + w + " mm\" color=\"#" + color(color, "000000") + "\"";
+    }
+
+    private static double parse(String s, double def) {
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
 
     int font(String face) {
         int i = fonts.indexOf(face);
@@ -282,14 +399,11 @@ final class HwpxRefs {
             b.append("</hh:fontface>");
         }
         b.append("</hh:fontfaces>");
-        b.append("<hh:borderFills itemCnt=\"1\"><hh:borderFill id=\"1\" threeD=\"0\" shadow=\"0\""
-                + " centerLine=\"NONE\" breakCellSeparateLine=\"0\">"
-                + "<hh:slash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>"
-                + "<hh:backSlash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>");
-        for (String side : new String[]{"leftBorder", "rightBorder", "topBorder", "bottomBorder", "diagonal"}) {
-            b.append("<hh:").append(side).append(" type=\"NONE\" width=\"0.1 mm\" color=\"#000000\"/>");
+        b.append("<hh:borderFills itemCnt=\"").append(borders.size()).append("\">");
+        for (int i = 0; i < borders.size(); i++) {
+            b.append("<hh:borderFill id=\"").append(i + 1).append('"').append(borders.get(i)).append("</hh:borderFill>");
         }
-        b.append("</hh:borderFill></hh:borderFills>");
+        b.append("</hh:borderFills>");
         b.append("<hh:charProperties itemCnt=\"").append(chars.size()).append("\">");
         for (int i = 0; i < chars.size(); i++) {
             b.append("<hh:charPr id=\"").append(i).append('"').append(chars.get(i)).append("</hh:charPr>");
