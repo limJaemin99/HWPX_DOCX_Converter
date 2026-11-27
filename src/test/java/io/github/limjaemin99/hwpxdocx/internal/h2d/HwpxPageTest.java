@@ -330,4 +330,82 @@ class HwpxPageTest {
         HwpxToDocx.endSection(sec, "<w:sectPr/>");
         assertTrue(sec.toString().endsWith("<w:p><w:pPr><w:rPr/><w:sectPr/></w:pPr></w:p>"));
     }
+
+    private static final String TWO_COLUMNS = "<hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"2\""
+            + " sameSz=\"1\" sameGap=\"2125\"/></hp:ctrl>";
+
+    @Test
+    void columnChangeInSectionBecomesContinuousSection() throws Exception {
+        convert(new TestHwpx().paragraphs(
+                para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("대한민국헌법")))))),
+                para("0", run("0", t("제1조 ①대한민국은 민주공화국이다."))),
+                para("0", run("0", TWO_COLUMNS), run("0", t("제14조 모든 국민은 거주ㆍ이전의 자유를 가진다."))),
+                para("0", run("0", t("제15조 모든 국민은 직업선택의 자유를 가진다.")))).toBytes());
+        Document doc = xml("word/document.xml");
+        NodeList sects = doc.getElementsByTagNameNS(W, "sectPr");
+        assertEquals(2, sects.getLength());
+        // 앞 조각: 1단, 머리말 참조. 제1조 문단 끝에 붙음
+        Element firstSect = (Element) sects.item(0);
+        Element firstP = (Element) firstSect.getParentNode().getParentNode();
+        assertEquals("제1조 ①대한민국은 민주공화국이다.", elementText(firstP));
+        assertEquals("", w(first(firstSect, "cols"), "num"));
+        assertEquals(1, firstSect.getElementsByTagNameNS(W, "headerReference").getLength());
+        // 뒤 조각: 이어서, 2단, 머리말은 앞 것을 이어 씀
+        Element last = sectPr();
+        assertEquals("continuous", w(first(last, "type"), "val"));
+        assertEquals("2", w(first(last, "cols"), "num"));
+        assertEquals("425", w(first(last, "cols"), "space"));
+        assertEquals(0, last.getElementsByTagNameNS(W, "headerReference").getLength());
+        assertEquals(0, result.getWarnings().size());
+    }
+
+    @Test
+    void twoColumnChangesMakeThreeSections() throws Exception {
+        String one = TWO_COLUMNS.replace("colCount=\"2\"", "colCount=\"1\"").replace("2125", "0");
+        convert(new TestHwpx().paragraphs(
+                para("0", run("0", t("제1조"))),
+                para("0", run("0", TWO_COLUMNS), run("0", t("제14조"))),
+                para("0", run("0", one), run("0", t("제38조")))).toBytes());
+        NodeList sects = xml("word/document.xml").getElementsByTagNameNS(W, "sectPr");
+        assertEquals(3, sects.getLength());
+        assertEquals(null, first((Element) sects.item(0), "type"));
+        assertEquals("continuous", w(first((Element) sects.item(1), "type"), "val"));
+        assertEquals("2", w(first((Element) sects.item(1), "cols"), "num"));
+        assertEquals("continuous", w(first((Element) sects.item(2), "type"), "val"));
+        assertEquals("", w(first((Element) sects.item(2), "cols"), "num"));
+    }
+
+    @Test
+    void columnChangeSurvivesDocxRoundTrip() throws Exception {
+        convert(new TestHwpx().paragraphs(
+                para("0", run("0", t("제1조"))),
+                para("0", run("0", TWO_COLUMNS), run("0", t("제14조")))).toBytes());
+        ByteArrayOutputStream back = new ByteArrayOutputStream();
+        HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(zipOut()), back, null);
+        Map<String, byte[]> h = io.github.limjaemin99.hwpxdocx.internal.ZipReader.unzip(new ByteArrayInputStream(back.toByteArray()));
+        assertEquals(null, h.get("Contents/section1.xml"));
+        String sec = new String(h.get("Contents/section0.xml"), java.nio.charset.StandardCharsets.UTF_8);
+        assertContains(sec, "colCount=\"2\"");
+    }
+
+    private static String elementText(Element e) {
+        StringBuilder b = new StringBuilder();
+        NodeList ts = e.getElementsByTagNameNS(W, "t");
+        for (int i = 0; i < ts.getLength(); i++) {
+            b.append(ts.item(i).getTextContent());
+        }
+        return b.toString();
+    }
+
+    private byte[] zipOut() throws Exception {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(o)) {
+            for (Map.Entry<String, byte[]> e : out.entrySet()) {
+                z.putNextEntry(new ZipEntry(e.getKey()));
+                z.write(e.getValue());
+                z.closeEntry();
+            }
+        }
+        return o.toByteArray();
+    }
 }
