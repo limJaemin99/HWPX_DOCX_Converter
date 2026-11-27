@@ -85,7 +85,7 @@ java -jar hwpx-docx-converter-<버전>.jar 입력.docx 출력.hwpx
 - 실행 중에 네트워크에 접근하지 않습니다
   - 업데이트 확인, 사용 통계 전송, 원격 자원 읽기가 없습니다
   - 문서 안 XML의 외부 참조(외부 엔티티, 외부 DTD, XInclude)를 읽지 않습니다. DOCTYPE이 든 XML은 거부합니다
-  - 줄 간격 보정에 쓰는 글꼴 줄 높이 표는 jar 안에 들어 있어, 실행하는 서버에 글꼴 파일이 없어도 됩니다 (v0.4.0에서 추가 예정)
+  - 줄 간격 보정에 쓰는 글꼴 줄 높이 표는 jar 안에 들어 있어, 실행하는 서버에 글꼴 파일이 없어도 됩니다
 - CI가 PR마다 jar(`jdeps`)와 소스를 검사해 `java.net`·`javax.net`·`java.rmi`·`javax.naming` 등 네트워크 관련 API가 들어가면 합치지 않습니다 (`build.sh check`)
 
 반입할 때는 릴리스에 함께 올라간 `.sha256` 파일로 jar가 바뀌지 않았는지 확인합니다.
@@ -123,6 +123,14 @@ sha256sum -c hwpx-docx-converter-<버전>.jar.sha256
 
 - 나빠짐으로 보는 것: 변환 실패, 결과 글자·문단·표·그림 수 감소, 건너뛴 요소 증가, 기준값에 없는 문서, 문서가 없어진 기준값
 - 원본 글자 수가 기준값과 다르면 문서가 바뀐 것이므로 기준값을 갱신합니다
+
+### 글꼴 줄 높이 표
+
+Word 배수 줄 간격은 글꼴의 한 줄 높이 기준이라, 글꼴마다 "한 줄 높이 ÷ 글자 크기"를 미리 계산해 `src/main/resources/io/github/limjaemin99/hwpxdocx/font-line-height.tsv`에 둡니다. 글꼴 파일은 저장소에 넣지 않습니다.
+
+- 서양 글꼴: (hhea ascender − descender + lineGap) ÷ unitsPerEm
+- 동아시아 글꼴(OS/2 한중일 코드 페이지): (winAscent + winDescent) ÷ unitsPerEm × 1.3. Word에서 잰 값(맑은 고딕 1.73, 함초롬바탕 1.69, 바탕·굴림 1.30 등)과 맞습니다
+- 다시 만들기 (글꼴이 깔린 Windows에서, 빌드 후): `java -cp build/test-classes io.github.limjaemin99.hwpxdocx.tools.FontLineHeights src/main/resources/io/github/limjaemin99/hwpxdocx/font-line-height.tsv`
 
 ## 개발 방식
 
