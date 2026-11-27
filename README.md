@@ -146,6 +146,13 @@ CI의 `docx-validate` 작업이 결과 DOCX를 [Open XML SDK](https://github.com
 - 기준 버전: Office2007. 가장 오래된 기준이라 그 뒤 버전에만 있는 요소를 쓰면 바로 걸립니다. 어느 Word에서나 열리는 범위로 맞추려는 것입니다
 - 도구는 `tools/docx-validate/`(.NET 8)에 있고 jar에는 들어가지 않습니다. 직접 돌릴 때: `dotnet run --project tools/docx-validate -- <DOCX 폴더> [Office2007|…|Microsoft365]`
 
+### LibreOffice 변환 시험
+
+CI의 `libreoffice` 작업이 공개 시험 문서를 변환한 DOCX를 LibreOffice Writer(한글 글꼴 `fonts-nanum`)로 열어 PDF로 바꿉니다. 열리지 않거나 PDF가 만들어지지 않거나 문서당 120초를 넘으면 실패합니다.
+
+- 문서별 PDF 쪽수는 작업 요약과 산출물(`libreoffice-pdf`의 `pages.tsv`)에 남습니다. **쪽수는 참고값**입니다. Word와 줄 나눔·글꼴이 달라 실패 조건으로 쓰지 않습니다
+- 직접 돌릴 때 (LibreOffice와 `pdfinfo`가 있는 Linux): `bash tools/libreoffice-pdf.sh <DOCX 폴더> <PDF 폴더> [문서당 제한 초]`
+
 ### 글꼴 줄 높이 표
 
 Word 배수 줄 간격은 글꼴의 한 줄 높이 기준이라, 글꼴마다 "한 줄 높이 ÷ 글자 크기"를 미리 계산해 `src/main/resources/io/github/limjaemin99/hwpxdocx/font-line-height.tsv`에 둡니다. 글꼴 파일은 저장소에 넣지 않습니다.
