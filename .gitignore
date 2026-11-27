@@ -6,6 +6,8 @@
 /build/
 /target/
 /bin/
+/tools/*/bin/
+/tools/*/obj/
 
 # IDE
 .idea/

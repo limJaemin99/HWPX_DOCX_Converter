@@ -60,17 +60,54 @@ jobs:
       - name: 시험 (JDK 17에서 만든 jar를 그대로 씀)
         run: bash build.sh test
 
+  # Word 대신 Open XML SDK로 결과 DOCX의 규격을 봄. .NET SDK와 NuGet 패키지는 CI 안에서만 받음
+  docx-validate:
+    name: DOCX 규격 검사 (Open XML SDK)
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v8
+        with:
+          name: build
+          path: build
+      - name: 시험 중 만든 DOCX 모으기
+        env:
+          HWPXDOCX_TEST_DOCX_OUT: ${{ github.workspace }}/build/docx-out/test
+        run: bash build.sh test
+      - name: 공개 시험 문서 변환 결과 모으기
+        run: bash build.sh regress src/test/resources/docs src/test/resources/baseline build/docx-out/regress
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Open XML SDK 검사 (Office2007 기준)
+        run: dotnet run --project tools/docx-validate -c Release -- build/docx-out Office2007
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: docx-out
+          path: build/docx-out/
+          retention-days: 7
+
   # 보호 규칙의 필수 검사는 이것 하나. 앞 작업이 실패해 건너뛰어져도 실패로 남도록 always()로 돌림
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [build, test]
+    needs: [build, test, docx-validate]
     runs-on: ubuntu-latest
     steps:
       - name: 결과 모으기
         env:
           BUILD: ${{ needs.build.result }}
           TEST: ${{ needs.test.result }}
+          VALIDATE: ${{ needs.docx-validate.result }}
         run: |
-          echo "build=$BUILD test=$TEST"
-          test "$BUILD" = success && test "$TEST" = success
+          echo "build=$BUILD test=$TEST docx-validate=$VALIDATE"
+          test "$BUILD" = success && test "$TEST" = success && test "$VALIDATE" = success

@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.h2d;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.internal.Xml;
 import io.github.limjaemin99.hwpxdocx.ConvertException;
 import io.github.limjaemin99.hwpxdocx.ConvertOptions;
@@ -51,7 +52,7 @@ class HwpxToDocxTest {
 
     private Document convert(byte[] hwpx, ConvertOptions opt) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        result = HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx), out, opt);
+        result = TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx), out, opt);
         try (ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()))) {
             ZipEntry e;
             while ((e = z.getNextEntry()) != null) {
@@ -178,6 +179,14 @@ class HwpxToDocxTest {
     }
 
     @Test
+    void fontSizeStaysInDocxRange() throws Exception {
+        convert(new TestHwpx().charPrs(BASE_CHAR, charPr("1", 10, "", ""), charPr("2", 900000, "", ""))
+                .paragraphs(para("0", run("1", t("제3조"))), para("0", run("2", t("제4조")))).toBytes());
+        assertEquals("2", val(runProps(p(1)), "sz", "val"));
+        assertEquals("3276", val(runProps(p(2)), "sz", "val"));
+    }
+
+    @Test
     void hftFontMapsToTtf() throws Exception {
         String c = charPr("1", 1000, "", "").replace("<hh:fontRef hangul=\"0\"", "<hh:fontRef hangul=\"1\"");
         convert(new TestHwpx().hangulFonts("한양신명조").charPrs(BASE_CHAR, c)
@@ -299,7 +308,7 @@ class HwpxToDocxTest {
     @Test
     void outputPartsAreValidXml() throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(new TestHwpx().paragraphs(
+        TestConvert.hwpxToDocx(new ByteArrayInputStream(new TestHwpx().paragraphs(
                 para("0", run("0", t("제10조 모든 국민은 인간으로서의 존엄과 가치를 가진다.")))).toBytes()), out, null);
         int parts = 0;
         try (ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()))) {

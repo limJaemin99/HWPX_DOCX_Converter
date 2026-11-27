@@ -50,7 +50,7 @@ public final class Malformed {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             try {
                 if (hwpx) {
-                    HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(in), out, null);
+                    TestConvert.hwpxToDocx(new ByteArrayInputStream(in), out, null);
                 } else {
                     HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(in), out, null);
                 }

@@ -1,5 +1,6 @@
 package io.github.limjaemin99.hwpxdocx.internal.h2d;
 
+import io.github.limjaemin99.hwpxdocx.testkit.TestConvert;
 import io.github.limjaemin99.hwpxdocx.ConvertException;
 import io.github.limjaemin99.hwpxdocx.ConvertResult;
 import io.github.limjaemin99.hwpxdocx.HwpxDocxConverter;
@@ -44,7 +45,7 @@ class HwpxMalformedTest {
     private static final String ADDR = "<hp:cellAddr colAddr=\"0\" rowAddr=\"0\"/>";
 
     private static ConvertResult convert(byte[] hwpx) throws Exception {
-        return HwpxDocxConverter.hwpxToDocx(new ByteArrayInputStream(hwpx), new ByteArrayOutputStream(), null);
+        return TestConvert.hwpxToDocx(new ByteArrayInputStream(hwpx), new ByteArrayOutputStream(), null);
     }
 
     @Test
