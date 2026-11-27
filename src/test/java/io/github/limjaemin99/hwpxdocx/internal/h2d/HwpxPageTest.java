@@ -253,4 +253,80 @@ class HwpxPageTest {
             media += name.startsWith("word/media/") ? 1 : 0;
         }
         assertEquals(1, media);
-    }}
+    }
+
+    /** 둘째 구역(section1.xml)을 더함: 가로 방향, 첫 문단에 {@code firstRuns}. spine 순서는 section0 → section1. */
+    private static TestHwpx withSecondSection(TestHwpx h, String firstRuns, String... more) {
+        String sec0 = h.get("Contents/section0.xml");
+        String sec1 = new TestHwpx().get("Contents/section0.xml")
+                .replace("landscape=\"WIDELY\"", "landscape=\"NARROWLY\"")
+                .replace("<hp:run charPrIDRef=\"0\"><hp:t/></hp:run>", firstRuns);
+        int end = sec1.lastIndexOf("</hs:sec>");
+        sec1 = sec1.substring(0, end) + String.join("", more) + sec1.substring(end);
+        h.put("Contents/section0.xml", sec0);
+        h.put("Contents/section1.xml", sec1);
+        return h.put("Contents/content.hpf", h.get("Contents/content.hpf")
+                .replace("<opf:item id=\"settings\"",
+                        "<opf:item id=\"section1\" href=\"Contents/section1.xml\" media-type=\"application/xml\"/>"
+                                + "<opf:item id=\"settings\"")
+                .replace("<opf:itemref idref=\"section0\" linear=\"yes\"/>",
+                        "<opf:itemref idref=\"section0\" linear=\"yes\"/><opf:itemref idref=\"section1\" linear=\"yes\"/>"));
+    }
+
+    @Test
+    void eachSectionKeepsItsOwnPageSetupAndHeader() throws Exception {
+        TestHwpx h = new TestHwpx().paragraphs(
+                para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("제1장 총강")))))),
+                para("0", run("0", t("제1조 ①대한민국은 민주공화국이다."))));
+        withSecondSection(h,
+                run("0", headerCtrl("header", "BOTH", para("0", run("0", t("제2장 국민의 권리와 의무")))))
+                        + run("0", ctrl("<hp:newNum num=\"5\" numType=\"PAGE\"/>")),
+                para("0", run("0", t("제10조 모든 국민은 인간으로서의 존엄과 가치를 가진다."))));
+        convert(h.toBytes());
+        Document doc = xml("word/document.xml");
+        NodeList sects = doc.getElementsByTagNameNS(W, "sectPr");
+        assertEquals(2, sects.getLength());
+        Element firstSect = (Element) sects.item(0);
+        assertEquals("pPr", firstSect.getParentNode().getLocalName());
+        assertEquals("", w(first(firstSect, "pgSz"), "orient"));
+        Element last = sectPr();
+        assertEquals("landscape", w(first(last, "pgSz"), "orient"));
+        assertEquals("5", w(first(last, "pgNumType"), "start"));
+        assertEquals("제2장 국민의 권리와 의무", text(part("header", "default")));
+        // 첫 구역 머리말은 첫 구역 설정에 붙음
+        String firstHeaderRid = ((Element) firstSect.getElementsByTagNameNS(W, "headerReference").item(0)).getAttributeNS(R, "id");
+        assertTrue(!firstHeaderRid.isEmpty());
+        assertEquals(0, result.getSkippedCount());
+        assertTrue(!result.getWarnings().toString().contains("구역"));
+        // 첫 구역 마지막 문단(구역 설정이 붙은 문단)은 첫 구역 본문
+        Element pWithSect = (Element) firstSect.getParentNode().getParentNode();
+        StringBuilder t = new StringBuilder();
+        NodeList ts = pWithSect.getElementsByTagNameNS(W, "t");
+        for (int i = 0; i < ts.getLength(); i++) {
+            t.append(ts.item(i).getTextContent());
+        }
+        assertEquals("제1조 ①대한민국은 민주공화국이다.", t.toString());
+    }
+
+    @Test
+    void sectionWithoutHeaderInheritsInWord() throws Exception {
+        TestHwpx h = new TestHwpx().paragraphs(
+                para("0", run("0", headerCtrl("header", "BOTH", para("0", run("0", t("대한민국헌법")))))));
+        withSecondSection(h, "<hp:run charPrIDRef=\"0\"><hp:t>제2장</hp:t></hp:run>");
+        convert(h.toBytes());
+        assertEquals(0, sectPr().getElementsByTagNameNS(W, "headerReference").getLength());
+        NodeList sects = xml("word/document.xml").getElementsByTagNameNS(W, "sectPr");
+        assertEquals(1, ((Element) sects.item(0)).getElementsByTagNameNS(W, "headerReference").getLength());
+    }
+
+    @Test
+    void endSectionAddsParagraphWhenNeeded() {
+        StringBuilder empty = new StringBuilder();
+        HwpxToDocx.endSection(empty, "<w:sectPr/>");
+        assertEquals("<w:p><w:pPr><w:sectPr/></w:pPr></w:p>", empty.toString());
+        StringBuilder sec = new StringBuilder("<w:p><w:pPr><w:jc w:val=\"both\"/></w:pPr><w:r/></w:p>"
+                + "<w:tbl><w:tr><w:tc><w:p><w:pPr></w:pPr></w:p></w:tc></w:tr></w:tbl><w:p><w:pPr><w:rPr/></w:pPr></w:p>");
+        HwpxToDocx.endSection(sec, "<w:sectPr/>");
+        assertTrue(sec.toString().endsWith("<w:p><w:pPr><w:rPr/><w:sectPr/></w:pPr></w:p>"));
+    }
+}

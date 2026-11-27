@@ -285,6 +285,11 @@ final class DocxProps {
      * Word는 본문까지의 거리와 머리말 위치를 따로 적어서 더해 줌.
      */
     static String pageSetup(Element secPr, Element colPr) {
+        return pageSetup(secPr, colPr, 0);
+    }
+
+    /** @param newPageNumber 구역 첫 문단의 쪽 번호 새로 시작 값 (0이면 없음). 구역 설정의 시작 번호보다 우선 */
+    static String pageSetup(Element secPr, Element colPr, int newPageNumber) {
         Element page = child(secPr, NS_HP, "pagePr");
         Element m = child(page, NS_HP, "margin");
         // 값이 없으면 한컴 새 문서 기본값 (A4, 위 20 mm, 아래·머리말·꼬리말 15 mm, 좌우 30 mm)
@@ -312,7 +317,7 @@ final class DocxProps {
                 .append("\" w:header=\"").append(twip(top))
                 .append("\" w:footer=\"").append(twip(bottom))
                 .append("\" w:gutter=\"").append(twip(intAttr(m, "gutter", 0))).append("\"/>");
-        int start = intAttr(child(secPr, NS_HP, "startNum"), "page", 0);
+        int start = newPageNumber > 0 ? newPageNumber : intAttr(child(secPr, NS_HP, "startNum"), "page", 0);
         if (start > 0) {
             b.append("<w:pgNumType w:start=\"").append(start).append("\"/>");
         }
