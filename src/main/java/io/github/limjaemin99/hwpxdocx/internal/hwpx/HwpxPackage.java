@@ -2,35 +2,28 @@ package io.github.limjaemin99.hwpxdocx.internal.hwpx;
 
 import io.github.limjaemin99.hwpxdocx.ConvertException;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
+import io.github.limjaemin99.hwpxdocx.internal.ZipReader;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
-import java.util.zip.ZipInputStream;
 
 /** 읽어 들인 HWPX 패키지. 항목 내용을 메모리에 들고, 구역 XML은 본문 순서대로 돌려준다. */
 public final class HwpxPackage {
 
     static final String NS_OPF = "http://www.idpf.org/2007/opf/";
 
-    // 압축 폭탄 방어. 법령 문서는 수 MB 수준이라 넉넉히 잡음
-    static final int MAX_ENTRIES = 10000;
-    static final long MAX_TOTAL_BYTES = 1L << 30;
 
     private static final Pattern SECTION = Pattern.compile("Contents/section(\\d+)\\.xml");
 
@@ -45,7 +38,7 @@ public final class HwpxPackage {
     }
 
     public static HwpxPackage read(InputStream in) throws IOException {
-        Map<String, byte[]> m = unzip(in, MAX_ENTRIES, MAX_TOTAL_BYTES);
+        Map<String, byte[]> m = ZipReader.unzip(in);
         byte[] mime = m.get("mimetype");
         if (mime != null && !HwpxSkeleton.MIMETYPE.equals(new String(mime, StandardCharsets.US_ASCII).trim())) {
             throw new ConvertException("HWPX가 아님: mimetype이 " + new String(mime, StandardCharsets.US_ASCII));
@@ -61,35 +54,7 @@ public final class HwpxPackage {
     }
 
     static Map<String, byte[]> unzip(InputStream in, int maxEntries, long maxTotal) throws IOException {
-        Map<String, byte[]> m = new LinkedHashMap<String, byte[]>();
-        long total = 0;
-        try (ZipInputStream zip = new ZipInputStream(in, StandardCharsets.UTF_8)) {
-            ZipEntry e;
-            byte[] buf = new byte[8192];
-            while ((e = zip.getNextEntry()) != null) {
-                if (m.size() >= maxEntries) {
-                    throw new ConvertException("패키지 항목이 너무 많음 (" + maxEntries + "개 초과)");
-                }
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                int n;
-                while ((n = zip.read(buf)) > 0) {
-                    total += n;
-                    if (total > maxTotal) {
-                        throw new ConvertException("패키지 압축을 푼 크기가 너무 큼 (" + maxTotal + "바이트 초과)");
-                    }
-                    out.write(buf, 0, n);
-                }
-                if (!e.isDirectory()) {
-                    m.put(e.getName(), out.toByteArray());
-                }
-            }
-        } catch (ZipException e) {
-            throw new ConvertException("ZIP 패키지를 읽지 못함: " + e.getMessage(), e);
-        }
-        if (m.isEmpty()) {
-            throw new ConvertException("ZIP 패키지가 아니거나 비어 있음");
-        }
-        return m;
+        return ZipReader.unzip(in, maxEntries, maxTotal);
     }
 
     // content.hpf spine 순서. spine에 구역이 없으면 파일 번호 순

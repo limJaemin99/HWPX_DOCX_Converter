@@ -78,7 +78,8 @@ final class Row {
             w.add("변환 실패");
             return w;
         }
-        if (!now.ok) {
+        if (!now.ok || !base.ok) {
+            // 실패했던 기준값의 수치(0)와는 비교하지 않음
             return w;
         }
         less(w, "결과 글자", base.outputChars, now.outputChars);

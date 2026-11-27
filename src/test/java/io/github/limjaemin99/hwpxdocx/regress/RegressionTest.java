@@ -115,6 +115,7 @@ class RegressionTest {
         Row failedBase = Row.failed("d.hwpx", 100, "x");
         assertTrue(Row.worse(failedBase, failedBase).isEmpty());
         assertTrue(Row.worse(failedBase, now).isEmpty());
+        assertTrue(Row.worse(failedBase, row(true, 100, 99, 11, 5)).isEmpty());
         assertEquals(Arrays.asList("변환 성공"), Row.changed(failedBase, now));
     }
 

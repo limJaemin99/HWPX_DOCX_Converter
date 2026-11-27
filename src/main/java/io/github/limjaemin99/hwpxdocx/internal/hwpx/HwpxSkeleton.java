@@ -54,6 +54,14 @@ public final class HwpxSkeleton {
         return m;
     }
 
+    /** 머리 정보·구역 하나를 바꿔 넣은 패키지 항목. */
+    public static Map<String, byte[]> entries(String headerXml, String sectionXml) {
+        Map<String, byte[]> m = entries();
+        m.put("Contents/header.xml", utf8(headerXml));
+        m.put("Contents/section0.xml", utf8(sectionXml));
+        return m;
+    }
+
     public static byte[] toBytes() throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         write(out);
@@ -62,8 +70,13 @@ public final class HwpxSkeleton {
 
     /** {@code out}은 닫지 않는다. */
     public static void write(OutputStream out) throws IOException {
+        write(entries(), out);
+    }
+
+    /** 패키지 항목을 순서대로 ZIP으로 쓴다 (mimetype은 맨 앞이어야 함). {@code out}은 닫지 않는다. */
+    public static void write(Map<String, byte[]> entries, OutputStream out) throws IOException {
         ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
-        for (Map.Entry<String, byte[]> e : entries().entrySet()) {
+        for (Map.Entry<String, byte[]> e : entries.entrySet()) {
             byte[] data = e.getValue();
             ZipEntry z = new ZipEntry(e.getKey());
             z.setTime(FIXED_TIME);
@@ -130,10 +143,22 @@ public final class HwpxSkeleton {
     private static final String[] FONT_LANGS = {"HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"};
 
     static String headerXml() {
-        StringBuilder b = new StringBuilder(XML_DECL);
-        b.append("<hh:head").append(NS_ALL).append(" version=\"1.4\" secCnt=\"1\">");
-        b.append("<hh:beginNum page=\"1\" footnote=\"1\" endnote=\"1\" pic=\"1\" tbl=\"1\" equation=\"1\"/>");
-        b.append("<hh:refList>");
+        return headerXml(defaultRefList());
+    }
+
+    /** {@code refList}(hh:fontfaces ~ hh:styles)를 담은 header.xml. */
+    public static String headerXml(String refList) {
+        return XML_DECL + "<hh:head" + NS_ALL + " version=\"1.4\" secCnt=\"1\">"
+                + "<hh:beginNum page=\"1\" footnote=\"1\" endnote=\"1\" pic=\"1\" tbl=\"1\" equation=\"1\"/>"
+                + "<hh:refList>" + refList + "</hh:refList>"
+                + "<hh:compatibleDocument targetProgram=\"HWP201X\"><hh:layoutCompatibility/></hh:compatibleDocument>"
+                + "<hh:docOption><hh:linkinfo path=\"\" pageInherit=\"0\" footnoteInherit=\"0\"/></hh:docOption>"
+                + "<hh:trackchageConfig flags=\"56\"/>"
+                + "</hh:head>";
+    }
+
+    private static String defaultRefList() {
+        StringBuilder b = new StringBuilder();
 
         b.append("<hh:fontfaces itemCnt=\"").append(FONT_LANGS.length).append("\">");
         for (String lang : FONT_LANGS) {
@@ -191,11 +216,6 @@ public final class HwpxSkeleton {
                 + " paraPrIDRef=\"0\" charPrIDRef=\"0\" nextStyleIDRef=\"0\" langID=\"1042\" lockForm=\"0\"/>"
                 + "</hh:styles>");
 
-        b.append("</hh:refList>");
-        b.append("<hh:compatibleDocument targetProgram=\"HWP201X\"><hh:layoutCompatibility/></hh:compatibleDocument>");
-        b.append("<hh:docOption><hh:linkinfo path=\"\" pageInherit=\"0\" footnoteInherit=\"0\"/></hh:docOption>");
-        b.append("<hh:trackchageConfig flags=\"56\"/>");
-        b.append("</hh:head>");
         return b.toString();
     }
 
@@ -205,10 +225,34 @@ public final class HwpxSkeleton {
     }
 
     static String sectionXml() {
-        // A4 세로, 한컴 기본 여백 (HWPUNIT = 1/7200 인치)
-        return XML_DECL + "<hs:sec" + NS_ALL + ">"
-                + "<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
-                + "<hp:run charPrIDRef=\"0\">"
+        return sectionXml("<hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\">"
+                + secPrRun("0")
+                + "<hp:run charPrIDRef=\"0\"><hp:t/></hp:run>"
+                + "<hp:linesegarray><hp:lineseg textpos=\"0\" vertpos=\"0\" vertsize=\"1000\" textheight=\"1000\""
+                + " baseline=\"850\" spacing=\"600\" horzpos=\"0\" horzsize=\"42520\" flags=\"393216\"/>"
+                + "</hp:linesegarray>"
+                + "</hp:p>");
+    }
+
+    /** 문단(hp:p 나열)을 담은 구역 XML. 첫 문단의 첫 런에 {@link #secPrRun} 이 있어야 한다. */
+    public static String sectionXml(String paragraphs) {
+        return XML_DECL + "<hs:sec" + NS_ALL + ">" + paragraphs + "</hs:sec>";
+    }
+
+    /** 구역 설정(A4 세로, 한컴 기본 여백)과 단 정의를 담은 런. 구역 첫 문단 맨 앞에 둔다. */
+    public static String secPrRun(String charPrId) {
+        return secPrRun(charPrId, PAGE_A4);
+    }
+
+    // A4 세로, 한컴 기본 여백 (HWPUNIT = 1/7200 인치)
+    static final String PAGE_A4 = "<hp:pagePr landscape=\"WIDELY\" width=\"59528\" height=\"84186\" gutterType=\"LEFT_ONLY\">"
+            + "<hp:margin header=\"4252\" footer=\"4252\" gutter=\"0\" left=\"8504\" right=\"8504\""
+            + " top=\"5668\" bottom=\"4252\"/>"
+            + "</hp:pagePr>";
+
+    /** @param pagePr hp:pagePr 요소 전체 */
+    public static String secPrRun(String charPrId, String pagePr) {
+        return "<hp:run charPrIDRef=\"" + charPrId + "\">"
                 + "<hp:secPr id=\"\" textDirection=\"HORIZONTAL\" spaceColumns=\"1134\" tabStop=\"8000\""
                 + " tabStopVal=\"4000\" tabStopUnit=\"HWPUNIT\" outlineShapeIDRef=\"0\" memoShapeIDRef=\"0\""
                 + " textVerticalWidthHead=\"0\" masterPageCnt=\"0\">"
@@ -218,19 +262,11 @@ public final class HwpxSkeleton {
                 + " border=\"SHOW_ALL\" fill=\"SHOW_ALL\" hideFirstPageNum=\"0\" hideFirstEmptyLine=\"0\""
                 + " showLineNumber=\"0\"/>"
                 + "<hp:lineNumberShape restartType=\"0\" countBy=\"0\" distance=\"0\" startNumber=\"0\"/>"
-                + "<hp:pagePr landscape=\"WIDELY\" width=\"59528\" height=\"84186\" gutterType=\"LEFT_ONLY\">"
-                + "<hp:margin header=\"4252\" footer=\"4252\" gutter=\"0\" left=\"8504\" right=\"8504\""
-                + " top=\"5668\" bottom=\"4252\"/>"
-                + "</hp:pagePr>"
+                + pagePr
                 + "</hp:secPr>"
                 + "<hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"1\" sameSz=\"1\""
                 + " sameGap=\"0\"/></hp:ctrl>"
-                + "</hp:run>"
-                + "<hp:run charPrIDRef=\"0\"><hp:t/></hp:run>"
-                + "<hp:linesegarray><hp:lineseg textpos=\"0\" vertpos=\"0\" vertsize=\"1000\" textheight=\"1000\""
-                + " baseline=\"850\" spacing=\"600\" horzpos=\"0\" horzsize=\"42520\" flags=\"393216\"/>"
-                + "</hp:linesegarray>"
-                + "</hp:p></hs:sec>";
+                + "</hp:run>";
     }
 
     static String settingsXml() {
