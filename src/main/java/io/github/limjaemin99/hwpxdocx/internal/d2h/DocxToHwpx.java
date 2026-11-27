@@ -158,6 +158,8 @@ public final class DocxToHwpx implements Converter {
         private int tableDepth;
         // 각주·미주 안을 읽는 중인지, 각주 파트별 문서
         private boolean inNote;
+        // 열린 Word 책갈피 ID → {한컴 필드 ID, 시작 컨트롤 XML, 이름}
+        private final Map<String, String[]> openBookmarks = new HashMap<String, String[]>();
         private final Map<String, org.w3c.dom.Document> noteParts = new HashMap<String, org.w3c.dom.Document>();
 
         Run(DocxPackage pkg, DocxStyles styles, ConvertStats stats) throws IOException {
@@ -563,6 +565,15 @@ public final class DocxToHwpx implements Converter {
                         }
                         break;
                     case "hyperlink":
+                        stats.warn("링크 주소는 아직 옮기지 않음 (글만 옮김)");
+                        collect(e, rp, items, field);
+                        break;
+                    case "bookmarkStart":
+                        bookmarkStart(e, rp, items);
+                        break;
+                    case "bookmarkEnd":
+                        bookmarkEnd(e, rp, items);
+                        break;
                     case "smartTag":
                     case "ins":
                     case "moveTo":
@@ -580,8 +591,6 @@ public final class DocxToHwpx implements Converter {
                         stats.warn("변경 추적으로 지운 글은 옮기지 않음");
                         break;
                     case "pPr":
-                    case "bookmarkStart":
-                    case "bookmarkEnd":
                     case "proofErr":
                     case "commentRangeStart":
                     case "commentRangeEnd":
@@ -710,6 +719,39 @@ public final class DocxToHwpx implements Converter {
                     default:
                         skip(c);
                 }
+            }
+        }
+
+        // ---------- 책갈피 ----------
+
+        /** 한컴 책갈피 필드: 한글이 저장한 문서와 같은 꼴 (Prop 2). _GoBack은 Word가 마지막 편집 위치로 쓰는 숨은 책갈피. */
+        private void bookmarkStart(Element e, Props rp, List<Item> items) {
+            String name = attr(e, "name");
+            String id = attr(e, "id");
+            if (name == null || name.isEmpty() || "_GoBack".equals(name) || id == null) {
+                return;
+            }
+            int fid = nextObjectId++;
+            String xml = "<hp:ctrl><hp:fieldBegin id=\"" + fid + "\" type=\"BOOKMARK\" name=\"" + Xml.attr(name)
+                    + "\" editable=\"0\" dirty=\"0\" zorder=\"-1\" fieldid=\"" + fid + "\"><hp:parameters cnt=\"1\">"
+                    + "<hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters></hp:fieldBegin></hp:ctrl>";
+            openBookmarks.put(id, new String[]{String.valueOf(fid), xml, name});
+            items.add(new Item(rp.copy(), Item.OBJECT, xml));
+        }
+
+        /** 시작 바로 뒤에서 끝나는 책갈피는 한컴 위치 책갈피(hp:bookmark)로. */
+        private void bookmarkEnd(Element e, Props rp, List<Item> items) {
+            String[] open = openBookmarks.remove(attr(e, "id"));
+            if (open == null) {
+                return;
+            }
+            Item last = items.isEmpty() ? null : items.get(items.size() - 1);
+            if (last != null && last.kind == Item.OBJECT && open[1].equals(last.text)) {
+                items.set(items.size() - 1, new Item(last.props, Item.OBJECT,
+                        "<hp:ctrl><hp:bookmark name=\"" + Xml.attr(open[2]) + "\"/></hp:ctrl>"));
+            } else {
+                items.add(new Item(rp.copy(), Item.OBJECT,
+                        "<hp:ctrl><hp:fieldEnd beginIDRef=\"" + open[0] + "\" fieldid=\"" + open[0] + "\"/></hp:ctrl>"));
             }
         }
 

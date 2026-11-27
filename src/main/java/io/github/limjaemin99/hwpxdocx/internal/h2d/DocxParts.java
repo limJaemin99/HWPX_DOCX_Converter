@@ -57,6 +57,19 @@ final class DocxParts {
         return rid;
     }
 
+    private final Map<String, String> linkRels = new HashMap<String, String>();
+
+    /** 본문의 외부 링크 관계 ID. 같은 주소는 관계 하나. */
+    String hyperlink(String url) {
+        String rid = linkRels.get(url);
+        if (rid == null) {
+            rid = "rId" + nextRel++;
+            rels.add(new String[]{rid, "hyperlink", url, "External"});
+            linkRels.put(url, rid);
+        }
+        return rid;
+    }
+
     private final Map<String, String> mediaBySource = new HashMap<String, String>();
 
     /** 그림 파일을 word/media에 한 번만 넣고 word/ 기준 경로(media/imageN.확장자)를 돌려준다. */

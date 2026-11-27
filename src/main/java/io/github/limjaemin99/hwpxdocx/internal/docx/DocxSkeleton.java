@@ -1,5 +1,7 @@
 package io.github.limjaemin99.hwpxdocx.internal.docx;
 
+import io.github.limjaemin99.hwpxdocx.internal.Xml;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -132,13 +134,13 @@ public final class DocxSkeleton {
     /** 골격이 쓰는 관계 ID 다음 번호. 더하는 관계는 rId3부터. */
     public static final int FIRST_FREE_REL = 3;
 
-    /** @param extra {Id, 관계 이름(image·header 등), Target} 목록. Target은 word/ 기준 상대 경로 */
+    /** @param extra {Id, 관계 이름(image·header 등), Target[, "External"]} 목록. Target은 word/ 기준 상대 경로 또는 외부 주소 */
     public static String documentRels(List<String[]> extra) {
         StringBuilder b = new StringBuilder(XML_DECL).append("<Relationships xmlns=\"").append(NS_PKG_REL).append("\">")
                 .append(rel("rId1", REL_TYPE + "styles", "styles.xml"))
                 .append(rel("rId2", REL_TYPE + "settings", "settings.xml"));
         for (String[] r : extra) {
-            b.append(rel(r[0], REL_TYPE + r[1], r[2]));
+            b.append(rel(r));
         }
         return b.append("</Relationships>").toString();
     }
@@ -147,9 +149,15 @@ public final class DocxSkeleton {
     public static String relationshipsXml(List<String[]> rels) {
         StringBuilder b = new StringBuilder(XML_DECL).append("<Relationships xmlns=\"").append(NS_PKG_REL).append("\">");
         for (String[] r : rels) {
-            b.append(rel(r[0], REL_TYPE + r[1], r[2]));
+            b.append(rel(r));
         }
         return b.append("</Relationships>").toString();
+    }
+
+    // {Id, 관계 이름, Target[, "External"]}. 외부 링크 주소에는 &·" 등이 올 수 있어 이스케이프
+    private static String rel(String[] r) {
+        String s = "<Relationship Id=\"" + r[0] + "\" Type=\"" + REL_TYPE + r[1] + "\" Target=\"" + Xml.attr(r[2]) + "\"";
+        return s + (r.length > 3 && "External".equals(r[3]) ? " TargetMode=\"External\"/>" : "/>");
     }
 
     private static String rel(String id, String type, String target) {
