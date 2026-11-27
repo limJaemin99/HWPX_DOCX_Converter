@@ -183,6 +183,49 @@ class SafeXmlTest {
         assertContains(e.getMessage(), StubFactory.class.getName());
     }
 
+    @Test
+    void jdkFactoryTurnsOffDeferredExpansion() throws Exception {
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance(SafeXml.JDK_DOM, null);
+        assertTrue(f.getFeature(SafeXml.DEFER_NODE_EXPANSION));
+        SafeXml.configure(f);
+        assertFalse(f.getFeature(SafeXml.DEFER_NODE_EXPANSION));
+    }
+
+    @Test
+    void factoryWithoutDeferredExpansionStillWorks() throws Exception {
+        SafeXml.configure(new NoDeferFactory());
+    }
+
+    /** 보안 설정은 받고 지연 확장 설정만 모르는 구현 흉내. */
+    public static final class NoDeferFactory extends DocumentBuilderFactory {
+
+        @Override
+        public DocumentBuilder newDocumentBuilder() throws ParserConfigurationException {
+            throw new ParserConfigurationException("stub");
+        }
+
+        @Override
+        public void setAttribute(String name, Object value) {
+        }
+
+        @Override
+        public Object getAttribute(String name) {
+            return null;
+        }
+
+        @Override
+        public void setFeature(String name, boolean value) throws ParserConfigurationException {
+            if (SafeXml.DEFER_NODE_EXPANSION.equals(name)) {
+                throw new ParserConfigurationException(name);
+            }
+        }
+
+        @Override
+        public boolean getFeature(String name) {
+            return false;
+        }
+    }
+
     /** 보안 설정을 받아들이지 않는 오래된 구현 흉내. */
     public static final class StubFactory extends DocumentBuilderFactory {
 
