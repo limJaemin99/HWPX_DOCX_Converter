@@ -1,4 +1,11 @@
 # 문서	상태	원본글자	결과글자	문단	표	그림	건너뜀
+docx/char-format.docx	ok	187	187	8	0	0	0
+docx/footnote.docx	ok	195	195	8	0	0	0
+docx/header-footer.docx	ok	351	335	15	0	0	0
+docx/multi-section.docx	ok	363	363	15	0	0	0
+docx/numbering.docx	ok	310	310	14	0	0	0
+docx/para-format.docx	ok	330	330	10	0	0	0
+docx/table-merge.docx	ok	193	193	19	1	0	0
 hwpx/char-format.hwpx	ok	253	253	8	0	0	0
 hwpx/footnote.hwpx	ok	142	145	7	0	0	0
 hwpx/header-footer.hwpx	ok	359	362	13	0	0	0
