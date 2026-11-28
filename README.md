@@ -160,7 +160,9 @@ CI의 `libreoffice` 작업이 공개 시험 문서를 변환한 DOCX를 LibreOff
 Word 배수 줄 간격은 글꼴의 한 줄 높이 기준이라, 글꼴마다 "한 줄 높이 ÷ 글자 크기"를 미리 계산해 `src/main/resources/io/github/limjaemin99/hwpxdocx/font-line-height.tsv`에 둡니다. 글꼴 파일은 저장소에 넣지 않습니다.
 
 - 서양 글꼴: (hhea ascender − descender + lineGap) ÷ unitsPerEm
-- 동아시아 글꼴(OS/2 한중일 코드 페이지): (winAscent + winDescent) ÷ unitsPerEm × 1.3. Word에서 잰 값(맑은 고딕 1.73, 함초롬바탕 1.69, 바탕·굴림 1.30 등)과 맞습니다
+- 동아시아 글꼴(OS/2 한중일 코드 페이지): (winAscent + winDescent) ÷ unitsPerEm × 1.3
+- Word에서 30줄을 이어 쓰고 잰 평균 비율이 있는 글꼴은 그 값을 씁니다: 맑은 고딕 1.730, 함초롬바탕·함초롬돋움 1.690, 나눔고딕 1.500, 바탕·굴림·돋움·HY중고딕·HY신명조·HY견고딕 1.3025. 표의 셋째 칸에 값마다 출처(`Word 실측(30줄 평균)` / `TTF 계산`)를 적습니다
+  - Times New Roman·Arial·Calibri는 잴 때 대체 글꼴로 그려져 그 글꼴의 값이 아니므로 TTF 계산값을 씁니다
 - 다시 만들기 (글꼴이 깔린 Windows에서, 빌드 후): `java -cp build/test-classes io.github.limjaemin99.hwpxdocx.tools.FontLineHeights src/main/resources/io/github/limjaemin99/hwpxdocx/font-line-height.tsv`
 
 ## 개발 방식

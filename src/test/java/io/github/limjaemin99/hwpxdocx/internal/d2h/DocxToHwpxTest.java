@@ -252,11 +252,13 @@ class DocxToHwpxTest {
     @Test
     void fontLineTableSkipsBrokenLines() {
         java.util.Map<String, Double> m = FontLineTable.load(new java.io.ByteArrayInputStream(
-                "# 주석\n바탕\t1.300\n깨진 줄\n숫자아님\tabc\n너무큼\t9\n".getBytes(StandardCharsets.UTF_8)));
-        assertEquals(1, m.size());
+                "# 주석\n바탕\t1.300\n굴림\t1.3025\tWord 실측(30줄 평균)\n깨진 줄\n숫자아님\tabc\n너무큼\t9\n"
+                        .getBytes(StandardCharsets.UTF_8)));
+        assertEquals(2, m.size());
         assertEquals(Double.valueOf(1.3), m.get("바탕"));
+        assertEquals(Double.valueOf(1.3025), m.get("굴림"));
         assertTrue(FontLineTable.load(null).isEmpty());
-        assertEquals(Double.valueOf(1.729), FontLineTable.factor("맑은 고딕"));
+        assertEquals(Double.valueOf(1.73), FontLineTable.factor("맑은 고딕"));
     }
 
     @Test

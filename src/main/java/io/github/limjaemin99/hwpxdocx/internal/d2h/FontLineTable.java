@@ -43,7 +43,8 @@ final class FontLineTable {
                     continue;
                 }
                 try {
-                    double v = Double.parseDouble(line.substring(tab + 1).trim());
+                    int end = line.indexOf('	', tab + 1);
+                    double v = Double.parseDouble(line.substring(tab + 1, end < 0 ? line.length() : end).trim());
                     if (v > 0.5 && v < 3) {
                         m.put(line.substring(0, tab), v);
                     }

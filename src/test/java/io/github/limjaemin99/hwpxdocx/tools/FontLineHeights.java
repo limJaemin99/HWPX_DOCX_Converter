@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -30,6 +31,30 @@ public final class FontLineHeights {
             "HYSinMyeongJo-Medium", "HYGothic-Medium", "HYGothic-Extra", "HYMyeongJo-Extra", "HYGraphic-Medium",
             "HYHeadLine-Medium", "Times New Roman", "Arial", "Calibri", "Cambria", "Courier New", "Verdana", "Tahoma",
             "Segoe UI", "Georgia");
+
+    static final String SOURCE_MEASURED = "Word 실측(30줄 평균)";
+    static final String SOURCE_TTF = "TTF 계산";
+
+    /**
+     * Word에서 30줄을 이어 쓰고 잰 평균 비율. TTF 계산값보다 우선한다.
+     * 한 줄만 잰 값은 0.75pt 단위로 반올림돼 쓰지 않는다. Times New Roman·Arial·Calibri는 잴 때 대체 글꼴로
+     * 그려져 그 글꼴의 값이 아니므로 넣지 않는다.
+     */
+    static final Map<String, Double> MEASURED = new HashMap<String, Double>();
+
+    static {
+        String[][] m = {
+                {"1.730", "Malgun Gothic", "맑은 고딕"},
+                {"1.690", "HCR Batang", "함초롬바탕", "HCR Dotum", "함초롬돋움"},
+                {"1.500", "NanumGothic", "나눔고딕"},
+                {"1.3025", "Batang", "바탕", "Gulim", "굴림", "Dotum", "돋움", "HYGothic-Medium", "HY중고딕",
+                        "HYSinMyeongJo-Medium", "HY신명조", "HYGothic-Extra", "HY견고딕"}};
+        for (String[] row : m) {
+            for (int i = 1; i < row.length; i++) {
+                MEASURED.put(row[i], Double.valueOf(row[0]));
+            }
+        }
+    }
 
     // OS/2 ulCodePageRange1 비트 17~21: 일본어, 중국어 간체, 한국어 완성형, 중국어 번체, 한국어 조합형
     private static final int CJK_CODE_PAGES = 0x003E0000;
@@ -84,12 +109,27 @@ public final class FontLineHeights {
         Map<String, Double> table = table(faces);
         try (PrintWriter w = new PrintWriter(new OutputStreamWriter(Files.newOutputStream(new File(args[0]).toPath()),
                 StandardCharsets.UTF_8))) {
-            w.print("# 글꼴 이름\tWord 한 줄 높이 ÷ 글자 크기. tools/FontLineHeights로 만듦\n");
+            w.print("# 글꼴 이름\tWord 한 줄 높이 ÷ 글자 크기\t값의 출처. tools/FontLineHeights로 만듦\n");
             for (Map.Entry<String, Double> e : table.entrySet()) {
-                w.print(e.getKey() + "\t" + String.format(Locale.ROOT, "%.3f", e.getValue()) + "\n");
+                w.print(line(e.getKey(), e.getValue()) + "\n");
             }
         }
         System.out.println(table.size() + "개 이름을 씀: " + args[0]);
+    }
+
+    /** 표 한 줄. 실측값이 있으면 그 값과 출처를 씀. */
+    static String line(String face, double ttf) {
+        Double m = MEASURED.get(face);
+        if (m != null) {
+            return face + "	" + format(m) + "	" + SOURCE_MEASURED;
+        }
+        return face + "	" + String.format(Locale.ROOT, "%.3f", ttf) + "	" + SOURCE_TTF;
+    }
+
+    // 1.3025처럼 실측값의 자릿수는 그대로 둠
+    private static String format(double v) {
+        String s = String.format(Locale.ROOT, "%.4f", v);
+        return s.endsWith("0") ? s.substring(0, s.length() - 1) : s;
     }
 
     /** 목록의 글꼴만, 같은 이름이면 Regular(없으면 처음 것)를 씀. */

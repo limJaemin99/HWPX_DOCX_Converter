@@ -114,28 +114,40 @@ public class FontLineHeightsTest {
         assertTrue(FontLineHeights.table(FontLineHeights.read(f)).isEmpty());
     }
 
-    /** jar 안 표가 Word에서 잰 10pt 한 줄 높이와 맞는지. */
+    @Test
+    public void measuredValueOverridesTtf() {
+        assertEquals("맑은 고딕	1.730	Word 실측(30줄 평균)", FontLineHeights.line("맑은 고딕", 1.7293));
+        assertEquals("Batang	1.3025	Word 실측(30줄 평균)", FontLineHeights.line("Batang", 1.3));
+        assertEquals("Arial	1.150	TTF 계산", FontLineHeights.line("Arial", 1.1499));
+    }
+
+    /** jar 안 표가 Word에서 30줄 평균으로 잰 비율과 같고, 값마다 출처가 적혀 있는지. */
     @Test
     public void bundledTableMatchesWordMeasurements() throws Exception {
-        Map<String, Double> t = new HashMap<String, Double>();
+        Map<String, String[]> t = new HashMap<String, String[]>();
         try (InputStream in = FontLineHeightsTest.class.getResourceAsStream("/io/github/limjaemin99/hwpxdocx/font-line-height.tsv")) {
             assertTrue(in != null);
             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             String line;
             while ((line = r.readLine()) != null) {
-                if (!line.startsWith("#") && line.indexOf('\t') > 0) {
-                    t.put(line.substring(0, line.indexOf('\t')), Double.parseDouble(line.substring(line.indexOf('\t') + 1)));
+                if (!line.startsWith("#") && line.indexOf('	') > 0) {
+                    String[] c = line.split("	");
+                    assertEquals(3, c.length);
+                    t.put(c[0], c);
                 }
             }
         }
-        String[][] measured = {{"맑은 고딕", "1.73"}, {"함초롬바탕", "1.69"}, {"함초롬돋움", "1.69"}, {"나눔고딕", "1.5"},
-                {"HY신명조", "1.3"}, {"바탕", "1.3"}, {"굴림", "1.3"}, {"돋움", "1.3"},
-                {"Times New Roman", "1.15"}, {"Arial", "1.15"}, {"Calibri", "1.22"}};
-        for (String[] m : measured) {
-            Double v = t.get(m[0]);
-            if (v == null || Math.abs(v - Double.parseDouble(m[1])) > 0.01) {
-                throw new AssertionError(m[0] + " 표 " + v + " / 실측 " + m[1]);
+        for (Map.Entry<String, Double> m : FontLineHeights.MEASURED.entrySet()) {
+            String[] c = t.get(m.getKey());
+            if (c == null || Double.parseDouble(c[1]) != m.getValue() || !FontLineHeights.SOURCE_MEASURED.equals(c[2])) {
+                throw new AssertionError(m.getKey() + " 표 " + (c == null ? null : String.join("/", c)) + " / 실측 " + m.getValue());
             }
+        }
+        // 잴 때 대체 글꼴로 그려진 서양 글꼴은 TTF 계산값
+        String[][] ttf = {{"Times New Roman", "1.150"}, {"Arial", "1.150"}, {"Calibri", "1.221"}};
+        for (String[] f : ttf) {
+            assertEquals(f[1], t.get(f[0])[1]);
+            assertEquals(FontLineHeights.SOURCE_TTF, t.get(f[0])[2]);
         }
     }
 }

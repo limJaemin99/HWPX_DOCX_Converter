@@ -1,48 +1,48 @@
-# 글꼴 이름	Word 한 줄 높이 ÷ 글자 크기. tools/FontLineHeights로 만듦
-Arial	1.150
-Batang	1.300
-BatangChe	1.300
-Calibri	1.221
-Cambria	1.172
-Courier New	1.133
-Dotum	1.300
-DotumChe	1.300
-Georgia	1.136
-Gulim	1.300
-GulimChe	1.300
-Gungsuh	1.300
-GungsuhChe	1.300
-HCR Batang	1.690
-HCR Dotum	1.690
-HYGothic-Extra	1.300
-HYGothic-Medium	1.300
-HYGraphic-Medium	1.300
-HYHeadLine-Medium	1.300
-HYMyeongJo-Extra	1.300
-HYSinMyeongJo-Medium	1.300
-HY견고딕	1.300
-HY견명조	1.300
-HY그래픽M	1.300
-HY신명조	1.300
-HY중고딕	1.300
-HY헤드라인M	1.300
-Malgun Gothic	1.729
-NanumGothic	1.495
-NanumMyeongjo	1.496
-Segoe UI	1.330
-Tahoma	1.207
-Times New Roman	1.150
-Verdana	1.215
-굴림	1.300
-굴림체	1.300
-궁서	1.300
-궁서체	1.300
-나눔고딕	1.495
-나눔명조	1.496
-돋움	1.300
-돋움체	1.300
-맑은 고딕	1.729
-바탕	1.300
-바탕체	1.300
-함초롬돋움	1.690
-함초롬바탕	1.690
+# 글꼴 이름	Word 한 줄 높이 ÷ 글자 크기	값의 출처. tools/FontLineHeights로 만듦
+Arial	1.150	TTF 계산
+Batang	1.3025	Word 실측(30줄 평균)
+BatangChe	1.300	TTF 계산
+Calibri	1.221	TTF 계산
+Cambria	1.172	TTF 계산
+Courier New	1.133	TTF 계산
+Dotum	1.3025	Word 실측(30줄 평균)
+DotumChe	1.300	TTF 계산
+Georgia	1.136	TTF 계산
+Gulim	1.3025	Word 실측(30줄 평균)
+GulimChe	1.300	TTF 계산
+Gungsuh	1.300	TTF 계산
+GungsuhChe	1.300	TTF 계산
+HCR Batang	1.690	Word 실측(30줄 평균)
+HCR Dotum	1.690	Word 실측(30줄 평균)
+HYGothic-Extra	1.3025	Word 실측(30줄 평균)
+HYGothic-Medium	1.3025	Word 실측(30줄 평균)
+HYGraphic-Medium	1.300	TTF 계산
+HYHeadLine-Medium	1.300	TTF 계산
+HYMyeongJo-Extra	1.300	TTF 계산
+HYSinMyeongJo-Medium	1.3025	Word 실측(30줄 평균)
+HY견고딕	1.3025	Word 실측(30줄 평균)
+HY견명조	1.300	TTF 계산
+HY그래픽M	1.300	TTF 계산
+HY신명조	1.3025	Word 실측(30줄 평균)
+HY중고딕	1.3025	Word 실측(30줄 평균)
+HY헤드라인M	1.300	TTF 계산
+Malgun Gothic	1.730	Word 실측(30줄 평균)
+NanumGothic	1.500	Word 실측(30줄 평균)
+NanumMyeongjo	1.496	TTF 계산
+Segoe UI	1.330	TTF 계산
+Tahoma	1.207	TTF 계산
+Times New Roman	1.150	TTF 계산
+Verdana	1.215	TTF 계산
+굴림	1.3025	Word 실측(30줄 평균)
+굴림체	1.300	TTF 계산
+궁서	1.300	TTF 계산
+궁서체	1.300	TTF 계산
+나눔고딕	1.500	Word 실측(30줄 평균)
+나눔명조	1.496	TTF 계산
+돋움	1.3025	Word 실측(30줄 평균)
+돋움체	1.300	TTF 계산
+맑은 고딕	1.730	Word 실측(30줄 평균)
+바탕	1.3025	Word 실측(30줄 평균)
+바탕체	1.300	TTF 계산
+함초롬돋움	1.690	Word 실측(30줄 평균)
+함초롬바탕	1.690	Word 실측(30줄 평균)
