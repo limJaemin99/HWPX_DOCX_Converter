@@ -50,7 +50,12 @@ public final class HwpxToDocx implements Converter {
             Element root = pkg.parse(sections.get(i)).getDocumentElement();
             run.outlineId = outlineId(root);
             for (Element p : children(root, NS_HP, "p")) {
+                int skipped = stats.getSkipTotal();
+                int start = sec.length();
                 run.paragraph(p, sec);
+                if (stats.getSkipTotal() > skipped) {
+                    run.keepOriginal(p, sec, start);
+                }
                 run.atSectionStart = false;
             }
             if (run.secPrCount > 1) {
@@ -70,6 +75,11 @@ public final class HwpxToDocx implements Converter {
             parts.numbering(run.numbering.xml());
         }
         run.notes();
+        if (!run.archive.isEmpty()) {
+            String item = run.archive.itemXml(pkg.get("Contents/header.xml"));
+            parts.customXml(item, OriginalArchive.itemPropsXml(item));
+            stats.warn("건너뛴 요소가 든 문단 " + run.archive.size() + "개의 원본을 DOCX 안에 보관함");
+        }
         DocxSkeleton.write(parts.entries(DocxSkeleton.documentXml(body.toString(), sectPr)), out);
     }
 
@@ -249,6 +259,27 @@ public final class HwpxToDocx implements Converter {
         private int nextBookmark;
         // 열린 링크의 w:hyperlink 시작 태그. 필드가 문단을 넘으면 문단마다 다시 염
         private String openLink;
+
+        final OriginalArchive archive = new OriginalArchive();
+
+        /**
+         * 본문 문단 {@code p}에서 나온 Word 문단들({@code sec}의 {@code start}부터 끝까지)을 숨은 책갈피로 감싸고 원본을 보관한다.
+         * 책갈피는 첫 문단의 w:pPr 뒤에서 시작해 마지막 문단 끝에서 끝남. 표로 시작하면 표 앞 본문 자리에서 시작.
+         */
+        void keepOriginal(Element p, StringBuilder sec, int start) throws IOException {
+            int n = archive.add(p, OriginalArchive.docxText(sec.subSequence(start, sec.length())));
+            int id = nextBookmark++;
+            int end = sec.lastIndexOf("</w:p>");
+            if (end < start) {
+                return;
+            }
+            sec.insert(end, "<w:bookmarkEnd w:id=\"" + id + "\"/>");
+            int at = start;
+            if (sec.indexOf("<w:p><w:pPr>", start) == start) {
+                at = sec.indexOf("</w:pPr>", start) + "</w:pPr>".length();
+            }
+            sec.insert(at, bookmarkStart(id, OriginalArchive.BOOKMARK_PREFIX + n));
+        }
 
         Run(HwpxPackage pkg, HwpxHeader header, DocxParts parts, ConvertStats stats) {
             this.pkg = pkg;

@@ -153,7 +153,9 @@ class HwpxPictureTest {
                 .toBytes());
         assertEquals(0, result.getPictureCount());
         assertEquals(Integer.valueOf(2), result.getSkipped().get("hp:pic"));
-        assertEquals(2, result.getWarnings().size());
+        // 그림 두 개의 경고 + 원본 문단 보관 경고
+        assertEquals(3, result.getWarnings().size());
+        assertTrue(result.getWarnings().get(2).startsWith("건너뛴 요소가 든 문단 1개의 원본"));
     }
 
     @Test

@@ -138,6 +138,17 @@ final class DocxParts {
                 + "</w:p></w:" + one + ">";
     }
 
+    /** 사용자 정의 XML 파트 하나(customXml/item1.xml)와 그 속성 파트. Word는 저장할 때 이 파트를 지우지 않는다. */
+    void customXml(String itemXml, String itemPropsXml) {
+        parts.put("customXml/item1.xml", utf8(itemXml));
+        parts.put("customXml/itemProps1.xml", utf8(itemPropsXml));
+        List<String[]> itemRels = new ArrayList<String[]>();
+        itemRels.add(new String[]{"rId1", "customXmlProps", "itemProps1.xml"});
+        parts.put("customXml/_rels/item1.xml.rels", utf8(DocxSkeleton.relationshipsXml(itemRels)));
+        overrides.put("/customXml/itemProps1.xml", "application/vnd.openxmlformats-officedocument.customXmlProperties+xml");
+        rels.add(new String[]{"rId" + nextRel++, "customXml", "../customXml/item1.xml"});
+    }
+
     void numbering(String xml) {
         numberingXml = xml;
     }

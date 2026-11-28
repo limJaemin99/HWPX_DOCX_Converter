@@ -79,6 +79,7 @@ java -jar hwpx-docx-converter-<버전>.jar 입력.docx 출력.hwpx
 - Word 책갈피 이름에는 빈칸을 쓸 수 없어 밑줄로 바꾸고 40자에서 자릅니다. 문단을 넘는 한글 링크는 Word에서 문단마다 링크로 나뉩니다
 - 한글에 없는 Word 번호 모양(서수 등)은 숫자 번호로 바꾸고 경고를 남깁니다
 - 아직 옮기지 못하는 요소는 건너뛰고 `ConvertResult.getSkipped()`에 이름과 개수를 남깁니다
+- HWPX → DOCX에서 건너뛴 요소가 든 본문 문단은 원본을 DOCX 안 사용자 정의 XML 파트(`customXml/item1.xml`)에 원본 `header.xml`과 함께 보관하고, 그 문단을 숨은 책갈피(`_hwpx_N`)로 표시합니다. 건너뛴 요소가 없으면 보관하지 않습니다. 다시 HWPX로 바꿀 때 되살리는 기능은 만드는 중입니다 (v0.5.0)
 
 ## 폐쇄망 사용
 

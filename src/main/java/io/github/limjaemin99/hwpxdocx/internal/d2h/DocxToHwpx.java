@@ -727,11 +727,14 @@ public final class DocxToHwpx implements Converter {
 
         // ---------- 책갈피 ----------
 
-        /** 한컴 책갈피 필드: 한글이 저장한 문서와 같은 꼴 (Prop 2). _GoBack은 Word가 마지막 편집 위치로 쓰는 숨은 책갈피. */
+        /**
+         * 한컴 책갈피 필드: 한글이 저장한 문서와 같은 꼴 (Prop 2). _GoBack은 Word가 마지막 편집 위치로 쓰는 숨은 책갈피,
+         * _hwpx_N은 HWPX → DOCX 때 원본 문단을 보관하며 붙인 표시라 옮기지 않음.
+         */
         private void bookmarkStart(Element e, Props rp, List<Item> items) {
             String name = attr(e, "name");
             String id = attr(e, "id");
-            if (name == null || name.isEmpty() || "_GoBack".equals(name) || id == null) {
+            if (name == null || name.isEmpty() || "_GoBack".equals(name) || name.startsWith("_hwpx_") || id == null) {
                 return;
             }
             int fid = nextObjectId++;
