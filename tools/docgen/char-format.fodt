@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+    xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
+    office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:font-face-decls>
+    <style:font-face style:name="함초롬바탕" svg:font-family="함초롬바탕"/>
+    <style:font-face style:name="함초롬돋움" svg:font-family="함초롬돋움"/>
+  </office:font-face-decls>
+  <office:styles>
+    <style:default-style style:family="paragraph">
+      <style:text-properties style:font-name="함초롬바탕" fo:font-size="10pt" fo:language="ko" fo:country="KR"
+          style:font-name-asian="함초롬바탕" style:font-size-asian="10pt" style:language-asian="ko" style:country-asian="KR"/>
+    </style:default-style>
+    <style:style style:name="Standard" style:family="paragraph" style:class="text"/>
+  </office:styles>
+  <office:automatic-styles>
+    <style:style style:name="P1" style:family="paragraph" style:parent-style-name="Standard">
+      <style:paragraph-properties fo:text-align="center"/>
+      <style:text-properties fo:font-size="16pt" fo:font-weight="bold" style:font-size-asian="16pt" style:font-weight-asian="bold"/>
+    </style:style>
+    <style:style style:name="T1" style:family="text">
+      <style:text-properties fo:font-weight="bold" style:font-weight-asian="bold"/>
+    </style:style>
+    <style:style style:name="T2" style:family="text">
+      <style:text-properties fo:font-style="italic" style:font-style-asian="italic"/>
+    </style:style>
+    <style:style style:name="T3" style:family="text">
+      <style:text-properties style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"/>
+    </style:style>
+    <style:style style:name="T4" style:family="text">
+      <style:text-properties fo:color="#c00000"/>
+    </style:style>
+    <style:style style:name="T5" style:family="text">
+      <style:text-properties style:font-name="함초롬돋움" fo:font-size="14pt" style:font-name-asian="함초롬돋움" style:font-size-asian="14pt"/>
+    </style:style>
+    <style:style style:name="T6" style:family="text">
+      <style:text-properties style:text-line-through-style="solid" style:text-line-through-type="single"/>
+    </style:style>
+    <style:style style:name="T7" style:family="text">
+      <style:text-properties fo:background-color="#ffff00"/>
+    </style:style>
+    <style:page-layout style:name="pm1">
+      <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" style:print-orientation="portrait"
+          fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2.5cm" fo:margin-right="2.5cm"/>
+    </style:page-layout>
+  </office:automatic-styles>
+  <office:master-styles>
+    <style:master-page style:name="Standard" style:page-layout-name="pm1"/>
+  </office:master-styles>
+  <office:body>
+    <office:text>
+      <text:p text:style-name="P1">대한민국헌법</text:p>
+      <text:p text:style-name="Standard">제1장 총강</text:p>
+      <text:p text:style-name="Standard">제1조 ①대한민국은 <text:span text:style-name="T1">민주공화국</text:span>이다.</text:p>
+      <text:p text:style-name="Standard">②대한민국의 <text:span text:style-name="T2">주권은 국민에게</text:span> 있고, 모든 권력은 국민으로부터 나온다.</text:p>
+      <text:p text:style-name="Standard">제2조 ①대한민국의 국민이 되는 요건은 <text:span text:style-name="T3">법률로 정한다</text:span>.</text:p>
+      <text:p text:style-name="Standard">제3조 대한민국의 영토는 <text:span text:style-name="T4">한반도와 그 부속도서</text:span>로 한다.</text:p>
+      <text:p text:style-name="Standard">제4조 대한민국은 통일을 지향하며, 자유민주적 기본질서에 입각한 <text:span text:style-name="T5">평화적 통일정책</text:span>을 수립하고 이를 추진한다.</text:p>
+      <text:p text:style-name="Standard">제5조 ①대한민국은 <text:span text:style-name="T7">국제평화</text:span>의 유지에 노력하고 <text:span text:style-name="T6">침략적 전쟁</text:span>을 부인한다.</text:p>
+    </office:text>
+  </office:body>
+</office:document>
