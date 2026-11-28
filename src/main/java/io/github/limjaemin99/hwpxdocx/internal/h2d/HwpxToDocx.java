@@ -267,7 +267,7 @@ public final class HwpxToDocx implements Converter {
          * 책갈피는 첫 문단의 w:pPr 뒤에서 시작해 마지막 문단 끝에서 끝남. 표로 시작하면 표 앞 본문 자리에서 시작.
          */
         void keepOriginal(Element p, StringBuilder sec, int start) throws IOException {
-            int n = archive.add(p, OriginalArchive.docxText(sec.subSequence(start, sec.length())));
+            int n = archive.add(p, OriginalArchive.docxText(sec.subSequence(start, sec.length())), pkg);
             int id = nextBookmark++;
             int end = sec.lastIndexOf("</w:p>");
             if (end < start) {

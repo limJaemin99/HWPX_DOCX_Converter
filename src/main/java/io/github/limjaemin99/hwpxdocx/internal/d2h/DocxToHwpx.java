@@ -276,7 +276,7 @@ public final class DocxToHwpx implements Converter {
                     stats.warn("구역이 나뉘는 자리를 넘는 보관 문단은 되살리지 않음");
                     continue;
                 }
-                String p = restore.paragraph(k.n, k.text.toString(), refs, stats);
+                String p = restore.paragraph(k.n, k.text.toString(), refs, this::addBinData, stats);
                 if (p == null) {
                     continue;
                 }
@@ -305,6 +305,15 @@ public final class DocxToHwpx implements Converter {
                 }
             }
             return false;
+        }
+
+        /** 되살린 원본 조각의 그림 데이터를 BinData로 넣고 ID를 돌려줌. */
+        private String addBinData(String ext, String mediaType, byte[] data) {
+            String binId = "image" + (binItems.size() + 1);
+            String href = "BinData/" + binId + "." + ext.toLowerCase(Locale.ROOT);
+            binItems.add(new String[]{binId, href, mediaType});
+            binData.put(href, data);
+            return binId;
         }
 
         /** 본문 자리 책갈피 또는 문단 안 책갈피. */
