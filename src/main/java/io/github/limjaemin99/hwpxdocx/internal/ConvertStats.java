@@ -61,6 +61,15 @@ public final class ConvertStats {
         return pictureCount;
     }
 
+    /** 건너뛴 요소 수의 합. */
+    public int getSkipTotal() {
+        int n = 0;
+        for (Integer v : skipped.values()) {
+            n += v;
+        }
+        return n;
+    }
+
     public Map<String, Integer> getSkipped() {
         return skipped;
     }
