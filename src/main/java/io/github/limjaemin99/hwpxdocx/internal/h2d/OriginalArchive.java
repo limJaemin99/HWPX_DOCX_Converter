@@ -3,6 +3,7 @@ package io.github.limjaemin99.hwpxdocx.internal.h2d;
 import io.github.limjaemin99.hwpxdocx.ConvertException;
 import io.github.limjaemin99.hwpxdocx.internal.SafeXml;
 import io.github.limjaemin99.hwpxdocx.internal.Xml;
+import io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxPackage;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
@@ -16,8 +17,11 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -37,6 +41,8 @@ final class OriginalArchive {
     private static final Pattern XML_DECL = Pattern.compile("^\\s*<\\?xml[^>]*\\?>\\s*");
 
     private final StringBuilder items = new StringBuilder();
+    private final StringBuilder bins = new StringBuilder();
+    private final Set<String> binIds = new HashSet<String>();
     private int count;
 
     boolean isEmpty() {
@@ -52,18 +58,38 @@ final class OriginalArchive {
      *
      * @param docxText 이 문단에서 나온 Word 문단들의 글자 (되살릴 때 고쳐졌는지 비교)
      */
-    int add(Element p, String docxText) throws ConvertException {
+    int add(Element p, String docxText, HwpxPackage pkg) throws ConvertException {
+        keepBinData(p, pkg);
         int n = ++count;
         items.append("<p n=\"").append(n).append("\" ns=\"").append(Xml.attr(namespaces(p))).append("\" text=\"")
                 .append(Xml.attr(docxText)).append("\">").append(Xml.text(serialize(p))).append("</p>");
         return n;
     }
 
+    /** 조각이 가리키는 그림 등 BinData 파일. 되살릴 때 새 HWPX에 다시 넣음. 파일이 없는 참조는 되살릴 때 걸러짐. */
+    private void keepBinData(Element p, HwpxPackage pkg) {
+        org.w3c.dom.NodeList all = p.getElementsByTagName("*");
+        for (int i = -1; i < all.getLength(); i++) {
+            Element e = i < 0 ? p : (Element) all.item(i);
+            String id = e.getAttribute("binaryItemIDRef");
+            if (id.isEmpty() || !binIds.add(id)) {
+                continue;
+            }
+            String[] item = pkg.item(id);
+            byte[] data = item == null ? null : pkg.get(item[0]);
+            if (data != null) {
+                bins.append("<bin id=\"").append(Xml.attr(id)).append("\" href=\"").append(Xml.attr(item[0]))
+                        .append("\" type=\"").append(Xml.attr(item[1])).append("\">")
+                        .append(Base64.getEncoder().encodeToString(data)).append("</bin>");
+            }
+        }
+    }
+
     /** 사용자 정의 XML 파트 본문. 원본 header.xml도 함께 둠 (되살린 조각이 가리키는 모양 정의를 옮겨 붙일 때 씀). */
     String itemXml(byte[] headerXml) {
         String header = headerXml == null ? "" : XML_DECL.matcher(new String(headerXml, StandardCharsets.UTF_8)).replaceFirst("");
         return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><original xmlns=\"" + NS
-                + "\" version=\"1\"><header>" + Xml.text(header) + "</header>" + items + "</original>";
+                + "\" version=\"1\"><header>" + Xml.text(header) + "</header>" + items + bins + "</original>";
     }
 
     /** itemID는 내용에서 만든 이름 기반 UUID라 같은 입력이면 같은 결과가 나옴. */

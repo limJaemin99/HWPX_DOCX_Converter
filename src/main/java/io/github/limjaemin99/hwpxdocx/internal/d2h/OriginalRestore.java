@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -50,7 +51,15 @@ final class OriginalRestore {
         }
     }
 
+    /** 되살린 조각이 가리키는 그림 데이터를 새 HWPX에 넣고 새 BinData ID를 돌려받음. */
+    interface Bins {
+        String add(String ext, String mediaType, byte[] data);
+    }
+
     private final Map<Integer, Element> items = new HashMap<Integer, Element>();
+    private final Map<String, Element> binDefs = new HashMap<String, Element>();
+    private final Map<String, String> binMap = new HashMap<String, String>();
+    private final List<Attr> pendingBins = new ArrayList<Attr>();
     private final Map<String, Element> charPrs = new HashMap<String, Element>();
     private final Map<String, Element> paraPrs = new HashMap<String, Element>();
     private final Map<String, Element> borderFills = new HashMap<String, Element>();
@@ -88,6 +97,8 @@ final class OriginalRestore {
                 } catch (NumberFormatException ignored) {
                     // 번호가 없는 항목은 찾을 수 없으므로 버림
                 }
+            } else if ("bin".equals(e.getLocalName())) {
+                binDefs.put(e.getAttribute("id"), e);
             } else if ("header".equals(e.getLocalName()) && !e.getTextContent().trim().isEmpty()) {
                 index(parse(e.getTextContent(), "보관한 원본 header.xml"));
                 hasHeader = true;
@@ -138,7 +149,7 @@ final class OriginalRestore {
      *
      * @param docxText 책갈피 안 Word 문단들의 글자 (w:t만 이어 붙임)
      */
-    String paragraph(int n, String docxText, HwpxRefs refs, ConvertStats stats) throws ConvertException {
+    String paragraph(int n, String docxText, HwpxRefs refs, Bins bins, ConvertStats stats) throws ConvertException {
         Element item = items.get(n);
         if (item == null) {
             return null;
@@ -156,8 +167,13 @@ final class OriginalRestore {
             return null;
         }
         strip(p);
+        pendingBins.clear();
         try {
             remap(p, refs);
+            // 그림 데이터는 문단 전체를 되살릴 수 있을 때만 넣음 (쓰이지 않는 BinData가 남지 않게)
+            for (Attr a : pendingBins) {
+                a.setValue(binId(a.getValue(), bins));
+            }
         } catch (Unsupported u) {
             stats.warn("보관한 원본 문단을 되살리지 않고 변환 결과를 씀: 옮길 수 없는 " + u.getMessage());
             return null;
@@ -234,6 +250,11 @@ final class OriginalRestore {
                 a.setValue("0");
             } else if ("borderFillIDRef".equals(name)) {
                 a.setValue(String.valueOf(borderId(a.getValue(), refs)));
+            } else if ("binaryItemIDRef".equals(name)) {
+                if (!binDefs.containsKey(a.getValue())) {
+                    throw new Unsupported("그림 데이터 참조");
+                }
+                pendingBins.add(a);
             } else if (name.endsWith("IDRef") && !"beginIDRef".equals(name) && !noLink(name, a.getValue())) {
                 throw new Unsupported("참조(" + name + ")");
             }
@@ -248,6 +269,25 @@ final class OriginalRestore {
     // 글상자 글 이어 흐르기 연결. 0이면 연결 없음
     private static boolean noLink(String name, String value) {
         return ("linkListIDRef".equals(name) || "linkListNextIDRef".equals(name)) && "0".equals(value);
+    }
+
+    private String binId(String id, Bins bins) throws Unsupported {
+        String done = binMap.get(id);
+        if (done != null) {
+            return done;
+        }
+        Element bin = binDefs.get(id);
+        byte[] data;
+        try {
+            data = Base64.getMimeDecoder().decode(bin.getTextContent());
+        } catch (IllegalArgumentException e) {
+            throw new Unsupported("그림 데이터");
+        }
+        String href = bin.getAttribute("href");
+        String ext = href.lastIndexOf('.') < 0 ? "bin" : href.substring(href.lastIndexOf('.') + 1);
+        String v = bins.add(ext, bin.getAttribute("type"), data);
+        binMap.put(id, v);
+        return v;
     }
 
     private int charId(String id, HwpxRefs refs) throws Unsupported {

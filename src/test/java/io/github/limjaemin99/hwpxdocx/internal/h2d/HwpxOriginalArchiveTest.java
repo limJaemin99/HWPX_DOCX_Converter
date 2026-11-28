@@ -16,15 +16,19 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.charPr;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.para;
+import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.pic;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.run;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.t;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.tbl;
@@ -309,5 +313,30 @@ class HwpxOriginalArchiveTest {
             }
         }
         throw new AssertionError(local + " " + id + " 없음");
+    }
+
+    /** 그림이 든 도형 문단: 보관할 때 그림 파일도 담고, 되살릴 때 새 BinData로 넣음. */
+    @Test
+    void keptPictureDataComesBack() throws Exception {
+        byte[] png = HwpxPictureTest.png();
+        convert(new TestHwpx().binData("image1", "BinData/image1.png", "image/png", png)
+                .paragraphs(para("0", run("0", pic("image1", 7200, 3600, true)), run("0", "<hp:rect/>"), run("0", t("제9조"))))
+                .toBytes());
+        Element bin = (Element) parse("customXml/item1.xml").getElementsByTagNameNS(OriginalArchive.NS, "bin").item(0);
+        assertEquals("image1", bin.getAttribute("id"));
+        assertEquals("BinData/image1.png", bin.getAttribute("href"));
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        back = HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(docx), out, null);
+        Map<String, byte[]> m = unzip(out.toByteArray());
+        String sec = new String(m.get("Contents/section0.xml"), StandardCharsets.UTF_8);
+        assertTrue(sec.contains("<hp:rect"));
+        Matcher id = Pattern.compile("binaryItemIDRef=\"([^\"]+)\"").matcher(sec);
+        assertTrue(id.find());
+        String hpf = new String(m.get("Contents/content.hpf"), StandardCharsets.UTF_8);
+        Matcher href = Pattern.compile("id=\"" + id.group(1) + "\" href=\"([^\"]+)\"").matcher(hpf);
+        assertTrue(href.find());
+        assertTrue(Arrays.equals(png, m.get(href.group(1))));
+        assertTrue(back.getWarnings().contains("보관한 원본 문단 1개를 되살림"));
     }
 }
