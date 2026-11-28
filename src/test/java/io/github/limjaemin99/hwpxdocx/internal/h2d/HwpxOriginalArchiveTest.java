@@ -17,10 +17,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
+import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.charPr;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.para;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.run;
 import static io.github.limjaemin99.hwpxdocx.internal.h2d.TestHwpx.t;
@@ -175,5 +178,136 @@ class HwpxOriginalArchiveTest {
                 }
             }
         }
+    }
+
+    private static Map<String, byte[]> unzip(byte[] zip) throws IOException {
+        Map<String, byte[]> m = new LinkedHashMap<String, byte[]>();
+        try (ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(zip))) {
+            ZipEntry e;
+            while ((e = z.getNextEntry()) != null) {
+                ByteArrayOutputStream b = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = z.read(buf)) > 0) {
+                    b.write(buf, 0, n);
+                }
+                m.put(e.getName(), b.toByteArray());
+            }
+        }
+        return m;
+    }
+
+    private static byte[] zip(Map<String, byte[]> m) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (ZipOutputStream z = new ZipOutputStream(out)) {
+            for (Map.Entry<String, byte[]> e : m.entrySet()) {
+                z.putNextEntry(new ZipEntry(e.getKey()));
+                z.write(e.getValue());
+                z.closeEntry();
+            }
+        }
+        return out.toByteArray();
+    }
+
+    private ConvertResult back;
+
+    /** DOCX → HWPX 결과의 header.xml과 section0.xml. */
+    private Map<String, String> toHwpx(byte[] docx) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        back = HwpxDocxConverter.docxToHwpx(new ByteArrayInputStream(docx), out, null);
+        Map<String, String> m = new HashMap<String, String>();
+        for (Map.Entry<String, byte[]> e : unzip(out.toByteArray()).entrySet()) {
+            if (e.getKey().startsWith("Contents/")) {
+                m.put(e.getKey(), new String(e.getValue(), StandardCharsets.UTF_8));
+            }
+        }
+        return m;
+    }
+
+    private static byte[] shapeDocument() throws IOException {
+        return new TestHwpx()
+                .charPrs(charPr("0", 1000, "", ""), charPr("1", 1500, "textColor=\"#C00000\"", "<hh:bold/>"))
+                .paragraphs(
+                        para("0", run("0", t("제1조 ①대한민국은 민주공화국이다."))),
+                        para("0", run("1", "<hp:rect id=\"7\"/>"), run("1", t("제3조 대한민국의 영토는 한반도와 그 부속도서로 한다."))))
+                .toBytes();
+    }
+
+    @Test
+    void roundTripRestoresKeptParagraph() throws Exception {
+        convert(shapeDocument());
+        Map<String, String> hwpx = toHwpx(docx);
+        String sec = hwpx.get("Contents/section0.xml");
+        assertTrue(sec.contains("<hp:rect id=\"7\""));
+        assertTrue(!sec.contains("linesegarray"));
+        assertTrue(back.getWarnings().contains("보관한 원본 문단 1개를 되살림"));
+        // 되살린 문단의 글자 모양 번호가 새 header에 옮겨 붙인 원본 모양(15pt, 빨강, 굵게)을 가리킴
+        Document h = SafeXml.parse(new ByteArrayInputStream(hwpx.get("Contents/header.xml").getBytes(StandardCharsets.UTF_8)), "header");
+        Document s = SafeXml.parse(new ByteArrayInputStream(sec.getBytes(StandardCharsets.UTF_8)), "section");
+        Element rect = (Element) s.getElementsByTagNameNS(HP, "rect").item(0);
+        String charId = ((Element) rect.getParentNode()).getAttribute("charPrIDRef");
+        Element cp = byId(h, "charPr", charId);
+        assertEquals("1500", cp.getAttribute("height"));
+        assertEquals("#C00000", cp.getAttribute("textColor"));
+        assertEquals(1, cp.getElementsByTagNameNS(HH, "bold").getLength());
+        // 글자 모양 수와 itemCnt가 맞음
+        Element list = (Element) h.getElementsByTagNameNS(HH, "charProperties").item(0);
+        assertEquals(String.valueOf(list.getElementsByTagNameNS(HH, "charPr").getLength()), list.getAttribute("itemCnt"));
+        // 다른 문단은 그대로 변환됨
+        assertTrue(sec.contains("제1조 ①대한민국은 민주공화국이다."));
+        assertEquals(1, s.getElementsByTagNameNS(HP, "rect").getLength());
+    }
+
+    @Test
+    void editedParagraphIsNotRestored() throws Exception {
+        convert(shapeDocument());
+        Map<String, byte[]> m = unzip(docx);
+        String doc = new String(m.get("word/document.xml"), StandardCharsets.UTF_8);
+        m.put("word/document.xml", doc.replace("부속도서로 한다.", "부속도서로 한다. (고침)").getBytes(StandardCharsets.UTF_8));
+        String sec = toHwpx(zip(m)).get("Contents/section0.xml");
+        assertTrue(!sec.contains("hp:rect"));
+        assertTrue(sec.contains("(고침)"));
+        assertTrue(back.getWarnings().contains("Word에서 글이 바뀐 문단은 보관한 원본 대신 변환 결과를 씀"));
+    }
+
+    @Test
+    void otherParagraphEditedStillRestores() throws Exception {
+        convert(shapeDocument());
+        Map<String, byte[]> m = unzip(docx);
+        String doc = new String(m.get("word/document.xml"), StandardCharsets.UTF_8);
+        m.put("word/document.xml", doc.replace("민주공화국이다.", "민주공화국이다. (고침)").getBytes(StandardCharsets.UTF_8));
+        String sec = toHwpx(zip(m)).get("Contents/section0.xml");
+        assertTrue(sec.contains("<hp:rect id=\"7\""));
+        assertTrue(sec.contains("(고침)"));
+    }
+
+    @Test
+    void numberedParagraphFallsBackToConversion() throws Exception {
+        TestHwpx t = new TestHwpx();
+        String header = t.get("Contents/header.xml");
+        // 바탕 문단 모양에 문단 번호를 걸어 되살릴 수 없는 경우를 만듦
+        int at = header.indexOf("<hh:heading ");
+        assertTrue(at > 0);
+        int end = header.indexOf("/>", at);
+        t.put("Contents/header.xml", header.substring(0, at) + "<hh:heading type=\"NUMBER\" idRef=\"1\" level=\"0\""
+                + header.substring(end));
+        convert(t.paragraphs(para("0", run("0", "<hp:rect/>"), run("0", t("제3조")))).toBytes());
+        String sec = toHwpx(docx).get("Contents/section0.xml");
+        assertTrue(!sec.contains("hp:rect"));
+        assertTrue(sec.contains("제3조"));
+        assertTrue(back.getWarnings().contains("보관한 원본 문단을 되살리지 않고 변환 결과를 씀: 옮길 수 없는 문단 번호"));
+    }
+
+    private static final String HP = "http://www.hancom.co.kr/hwpml/2011/paragraph";
+    private static final String HH = "http://www.hancom.co.kr/hwpml/2011/head";
+
+    private static Element byId(Document d, String local, String id) {
+        NodeList l = d.getElementsByTagNameNS(HH, local);
+        for (int i = 0; i < l.getLength(); i++) {
+            if (id.equals(((Element) l.item(i)).getAttribute("id"))) {
+                return (Element) l.item(i);
+            }
+        }
+        throw new AssertionError(local + " " + id + " 없음");
     }
 }

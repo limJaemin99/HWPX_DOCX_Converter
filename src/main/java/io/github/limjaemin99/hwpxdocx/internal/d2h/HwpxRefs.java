@@ -43,6 +43,9 @@ final class HwpxRefs {
     private final Map<String, Integer> paraIds = new HashMap<String, Integer>();
     private final List<String> borders = new ArrayList<String>();
     private final Map<String, Integer> borderIds = new HashMap<String, Integer>();
+    // 되살린 원본 문단이 가리키는 탭 정의. ID 0은 기본 탭이라 1부터
+    private final List<String> tabs = new ArrayList<String>();
+    private final Map<String, Integer> tabIds = new HashMap<String, Integer>();
 
     static final String NO_LINE = "NONE";
 
@@ -319,6 +322,30 @@ final class HwpxRefs {
                 + "\" unit=\"HWPUNIT\"/>";
     }
 
+    // 원본 header.xml에서 옮겨 붙이는 정의. body는 id 속성 뒤의 속성들과 '>' 뒤 자식 XML
+
+    int importChar(String body) {
+        return id(body, chars, charIds);
+    }
+
+    int importPara(String body) {
+        return id(body, paras, paraIds);
+    }
+
+    int importBorder(String body) {
+        Integer id = borderIds.get(body);
+        if (id == null) {
+            borders.add(body);
+            id = borders.size();
+            borderIds.put(body, id);
+        }
+        return id;
+    }
+
+    int importTab(String body) {
+        return id(body, tabs, tabIds) + 1;
+    }
+
     private static int id(String key, List<String> list, Map<String, Integer> ids) {
         Integer id = ids.get(key);
         if (id == null) {
@@ -421,8 +448,12 @@ final class HwpxRefs {
             b.append("<hh:charPr id=\"").append(i).append('"').append(chars.get(i)).append("</hh:charPr>");
         }
         b.append("</hh:charProperties>");
-        b.append("<hh:tabProperties itemCnt=\"1\"><hh:tabPr id=\"0\" autoTabLeft=\"0\" autoTabRight=\"0\"/>"
-                + "</hh:tabProperties>");
+        b.append("<hh:tabProperties itemCnt=\"").append(tabs.size() + 1)
+                .append("\"><hh:tabPr id=\"0\" autoTabLeft=\"0\" autoTabRight=\"0\"/>");
+        for (int i = 0; i < tabs.size(); i++) {
+            b.append("<hh:tabPr id=\"").append(i + 1).append('"').append(tabs.get(i)).append("</hh:tabPr>");
+        }
+        b.append("</hh:tabProperties>");
         b.append(numbering);
         b.append("<hh:paraProperties itemCnt=\"").append(paras.size()).append("\">");
         for (int i = 0; i < paras.size(); i++) {

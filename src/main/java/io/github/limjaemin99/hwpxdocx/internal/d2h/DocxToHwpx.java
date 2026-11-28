@@ -40,7 +40,7 @@ public final class DocxToHwpx implements Converter {
         Element lastSectPr = null;
         if (bodies.getLength() > 0) {
             Element body = (Element) bodies.item(0);
-            run.blocks(body, paragraphs);
+            run.body(body, paragraphs);
             for (Node n = body.getFirstChild(); n != null; n = n.getNextSibling()) {
                 if (n instanceof Element && "sectPr".equals(n.getLocalName()) && NS_W.equals(n.getNamespaceURI())) {
                     lastSectPr = (Element) n;
@@ -185,32 +185,148 @@ public final class DocxToHwpx implements Converter {
             return Math.max(ea == null ? DEFAULT_LINE_FACTOR : ea, la == null ? DEFAULT_LINE_FACTOR : la);
         }
 
-        void blocks(Element parent, List<String> out) throws IOException {
-            for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
+        /** HWPX → DOCX 때 보관한 원본 문단 하나의 책갈피 범위: 본문 HWPX 문단 [start, end)와 그 안 Word 글자. */
+        private static final class Kept {
+            final int n;
+            final int start;
+            int end;
+            final StringBuilder text = new StringBuilder();
+
+            Kept(int n, int start) {
+                this.n = n;
+                this.start = start;
+            }
+        }
+
+        /** 본문. 보관한 원본이 있으면 책갈피 범위를 모아 두었다가, 글이 그대로인 범위를 원본 문단으로 바꾼다. */
+        void body(Element body, List<String> out) throws IOException {
+            OriginalRestore restore = OriginalRestore.read(pkg);
+            if (restore == null) {
+                blocks(body, out);
+                return;
+            }
+            Map<String, Kept> open = new HashMap<String, Kept>();
+            List<Kept> done = new ArrayList<Kept>();
+            for (Node n = body.getFirstChild(); n != null; n = n.getNextSibling()) {
                 if (!(n instanceof Element)) {
                     continue;
                 }
                 Element e = (Element) n;
-                String name = e.getLocalName();
-                if (!NS_W.equals(e.getNamespaceURI())) {
-                    skip(e);
-                } else if ("p".equals(name)) {
-                    paragraph(e, out);
-                } else if ("tbl".equals(name)) {
-                    table(e, out);
-                } else if ("sdt".equals(name)) {
-                    Element content = child(e, "sdtContent");
-                    if (content != null) {
-                        blocks(content, out);
+                for (Element s : marks(e, "bookmarkStart")) {
+                    int k = OriginalRestore.number(attr(s, "name"));
+                    if (k > 0 && attr(s, "id") != null) {
+                        open.put(attr(s, "id"), new Kept(k, out.size()));
                     }
-                } else if ("customXml".equals(name)) {
-                    blocks(e, out);
-                } else if (!"sectPr".equals(name) && !"tcPr".equals(name) && !"bookmarkStart".equals(name)
-                        && !"bookmarkEnd".equals(name) && !"proofErr".equals(name) && !"permStart".equals(name)
-                        && !"permEnd".equals(name)) {
-                    // 구역 설정(sectPr)은 쪽 설정 변환에서 다룸
-                    skip(e);
                 }
+                if (!open.isEmpty()) {
+                    NodeList ts = e.getElementsByTagNameNS(NS_W, "t");
+                    StringBuilder t = new StringBuilder();
+                    for (int i = 0; i < ts.getLength(); i++) {
+                        t.append(ts.item(i).getTextContent());
+                    }
+                    for (Kept k : open.values()) {
+                        k.text.append(t);
+                    }
+                }
+                block(e, out);
+                for (Element s : marks(e, "bookmarkEnd")) {
+                    Kept k = open.remove(attr(s, "id"));
+                    if (k != null) {
+                        k.end = out.size();
+                        done.add(k);
+                    }
+                }
+            }
+            int restored = 0;
+            for (int i = done.size() - 1; i >= 0; i--) {
+                Kept k = done.get(i);
+                if (k.end <= k.start || overlapsLater(done, i)) {
+                    continue;
+                }
+                boolean crossesSection = false;
+                for (int c : sectionCuts) {
+                    crossesSection |= c > k.start && c < k.end;
+                }
+                if (crossesSection) {
+                    stats.warn("구역이 나뉘는 자리를 넘는 보관 문단은 되살리지 않음");
+                    continue;
+                }
+                String p = restore.paragraph(k.n, k.text.toString(), refs, stats);
+                if (p == null) {
+                    continue;
+                }
+                out.subList(k.start, k.end).clear();
+                out.add(k.start, p);
+                int removed = k.end - k.start - 1;
+                for (int j = 0; j < sectionCuts.size(); j++) {
+                    if (sectionCuts.get(j) >= k.end) {
+                        sectionCuts.set(j, sectionCuts.get(j) - removed);
+                    }
+                }
+                restored++;
+            }
+            if (restored > 0) {
+                stats.warn("보관한 원본 문단 " + restored + "개를 되살림");
+            }
+        }
+
+        // 범위가 겹치면 (Word에서 책갈피가 옮겨진 경우) 둘 다 되살리지 않음
+        private static boolean overlapsLater(List<Kept> done, int i) {
+            Kept k = done.get(i);
+            for (int j = 0; j < done.size(); j++) {
+                Kept o = done.get(j);
+                if (j != i && o.start < k.end && k.start < o.end) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 본문 자리 책갈피 또는 문단 안 책갈피. */
+        private static List<Element> marks(Element e, String local) {
+            List<Element> l = new ArrayList<Element>();
+            if (!NS_W.equals(e.getNamespaceURI())) {
+                return l;
+            }
+            if (local.equals(e.getLocalName())) {
+                l.add(e);
+            } else if ("p".equals(e.getLocalName())) {
+                NodeList ns = e.getElementsByTagNameNS(NS_W, local);
+                for (int i = 0; i < ns.getLength(); i++) {
+                    l.add((Element) ns.item(i));
+                }
+            }
+            return l;
+        }
+
+        void blocks(Element parent, List<String> out) throws IOException {
+            for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (n instanceof Element) {
+                    block((Element) n, out);
+                }
+            }
+        }
+
+        private void block(Element e, List<String> out) throws IOException {
+            String name = e.getLocalName();
+            if (!NS_W.equals(e.getNamespaceURI())) {
+                skip(e);
+            } else if ("p".equals(name)) {
+                paragraph(e, out);
+            } else if ("tbl".equals(name)) {
+                table(e, out);
+            } else if ("sdt".equals(name)) {
+                Element content = child(e, "sdtContent");
+                if (content != null) {
+                    blocks(content, out);
+                }
+            } else if ("customXml".equals(name)) {
+                blocks(e, out);
+            } else if (!"sectPr".equals(name) && !"tcPr".equals(name) && !"bookmarkStart".equals(name)
+                    && !"bookmarkEnd".equals(name) && !"proofErr".equals(name) && !"permStart".equals(name)
+                    && !"permEnd".equals(name)) {
+                // 구역 설정(sectPr)은 쪽 설정 변환에서 다룸
+                skip(e);
             }
         }
 
@@ -734,7 +850,7 @@ public final class DocxToHwpx implements Converter {
         private void bookmarkStart(Element e, Props rp, List<Item> items) {
             String name = attr(e, "name");
             String id = attr(e, "id");
-            if (name == null || name.isEmpty() || "_GoBack".equals(name) || name.startsWith("_hwpx_") || id == null) {
+            if (name == null || name.isEmpty() || "_GoBack".equals(name) || name.startsWith(OriginalRestore.BOOKMARK_PREFIX) || id == null) {
                 return;
             }
             int fid = nextObjectId++;
