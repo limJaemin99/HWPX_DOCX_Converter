@@ -7,6 +7,7 @@ import io.github.limjaemin99.hwpxdocx.internal.Limits;
 import io.github.limjaemin99.hwpxdocx.internal.Xml;
 import io.github.limjaemin99.hwpxdocx.internal.hwpx.HwpxSkeleton;
 import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
@@ -14,11 +15,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.NS_W;
 import static io.github.limjaemin99.hwpxdocx.internal.d2h.Props.attr;
@@ -65,9 +70,17 @@ public final class DocxToHwpx implements Converter {
             String first = paras.get(0);
             int open = first.indexOf('>') + 1;
             boolean sameSection = i > 0 && run.continuesOnSamePage(sectPrs.get(i - 1), sectPrs.get(i), inherited);
+            boolean pageBreakOnly = !sameSection && i > 0 && run.onlyNewPage(sectPrs.get(i - 1), sectPrs.get(i));
+            if (pageBreakOnly) {
+                // 쪽 설정이 같은 '다음 쪽' 구역 나누기는 같은 구역 안 쪽 나눔으로 (한컴은 구역 중간에 머리말을 바꿀 수 있음)
+                sameSection = true;
+                first = withPageBreak(first);
+                open = first.indexOf('>') + 1;
+            }
             // 구역 설정과 머리말·꼬리말은 구역 첫 문단의 맨 앞 런에 둠.
             // 한컴 구역은 늘 새 쪽에서 시작하므로 같은 쪽에서 이어지는 구역은 나누지 않고 그 문단에 단 설정만 둠
-            String head = sameSection ? run.columnChange(sectPrs.get(i - 1), sectPrs.get(i))
+            String head = sameSection
+                    ? run.columnChange(sectPrs.get(i - 1), sectPrs.get(i)) + run.headerFooterChange(sectPrs.get(i), inherited)
                     : run.section(sectPrs.get(i), i, inherited);
             paras.set(0, first.substring(0, open) + head + first.substring(open));
             StringBuilder section = sameSection ? bodiesOut.get(bodiesOut.size() - 1) : new StringBuilder();
@@ -84,6 +97,18 @@ public final class DocxToHwpx implements Converter {
         }
         String header = HwpxSkeleton.headerXml(run.refs.refList(run.numbering.refXml()), sections.size());
         HwpxSkeleton.write(HwpxSkeleton.entries(header, sections, run.binItems, run.binData), out);
+    }
+
+    /** 문단 시작 태그의 pageBreak를 1로. */
+    static String withPageBreak(String p) {
+        int end = p.indexOf('>');
+        String tag = p.substring(0, end);
+        if (tag.contains(" pageBreak=\"")) {
+            tag = tag.replaceFirst(" pageBreak=\"[^\"]*\"", " pageBreak=\"1\"");
+        } else {
+            tag += " pageBreak=\"1\"";
+        }
+        return tag + p.substring(end);
     }
 
     /** 문단 안의 한 조각: 글, 탭, 줄바꿈, 쪽 나눔, 쪽 번호. */
@@ -1006,7 +1031,7 @@ public final class DocxToHwpx implements Converter {
                 // 한컴 구역은 늘 새 쪽에서 시작함
                 String type = attr(child(sectPr, "type"), "val");
                 if ("continuous".equals(type)) {
-                    stats.warn("같은 쪽에서 이어지는 구역 나누기는 용지·여백·머리말이 앞 구역과 달라 새 쪽에서 시작하는 구역으로 바꿈");
+                    stats.warn("같은 쪽에서 이어지는 구역 나누기는 용지·여백·쪽 번호가 앞 구역과 달라 새 쪽에서 시작하는 구역으로 바꿈");
                 } else if ("nextColumn".equals(type)) {
                     stats.warn("다음 단에서 시작하는 구역 나누기는 새 쪽에서 시작하는 구역으로 바꿈");
                 } else if ("oddPage".equals(type) || "evenPage".equals(type)) {
@@ -1040,17 +1065,7 @@ public final class DocxToHwpx implements Converter {
             boolean evenOdd = evenAndOddHeaders();
             StringBuilder ctrls = new StringBuilder();
             for (String what : new String[]{"header", "footer"}) {
-                Map<String, String> parts = new HashMap<String, String>();
-                for (Node n = sectPr.getFirstChild(); n != null; n = n.getNextSibling()) {
-                    if (n instanceof Element && (what + "Reference").equals(n.getLocalName())) {
-                        Element ref = (Element) n;
-                        String type = attr(ref, "type") == null ? "default" : attr(ref, "type");
-                        DocxPackage.Rel rel = rels.get(ref.getAttributeNS(NS_R, "id"));
-                        if (rel != null && !rel.external && pkg.has(rel.target)) {
-                            parts.put(type, rel.target);
-                        }
-                    }
-                }
+                Map<String, String> parts = headerFooterParts(sectPr, what);
                 // 짝수 쪽 머리말이 앞 구역에서 이어지면 이 구역의 기본 머리말은 홀수 쪽에만 걸어야 함
                 boolean even = parts.containsKey("even") || inherited.containsKey(what + ":even");
                 for (Map.Entry<String, String> e : parts.entrySet()) {
@@ -1075,9 +1090,51 @@ public final class DocxToHwpx implements Converter {
             return run;
         }
 
+        /** 구역 설정이 가리키는 머리말(header)·꼬리말(footer) 파트: 종류(default·even·first) → 파트 이름. */
+        private Map<String, String> headerFooterParts(Element sectPr, String what) {
+            Map<String, String> parts = new HashMap<String, String>();
+            for (Node n = sectPr.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (n instanceof Element && (what + "Reference").equals(n.getLocalName())) {
+                    Element ref = (Element) n;
+                    String type = attr(ref, "type") == null ? "default" : attr(ref, "type");
+                    DocxPackage.Rel rel = rels.get(ref.getAttributeNS(NS_R, "id"));
+                    if (rel != null && !rel.external && pkg.has(rel.target)) {
+                        parts.put(type, rel.target);
+                    }
+                }
+            }
+            return parts;
+        }
+
         /**
-         * '이어서' 구역 나누기이고 용지·여백·쪽 번호·머리말·꼬리말이 앞 구역과 같으면 true.
-         * 머리말·꼬리말을 적지 않은 구역은 앞 것을 이어 쓰므로 같은 것으로 봄.
+         * 같은 구역으로 이어 붙인 구역 나누기에서 바뀐 머리말·꼬리말만 컨트롤로 둠. 한컴은 구역 중간 문단에도
+         * 머리말·꼬리말 컨트롤을 둘 수 있어 구역을 새로 나누지 않아도 됨 (HWPX → DOCX에서 그런 문단마다 Word 구역을 나눔).
+         */
+        String headerFooterChange(Element sectPr, Map<String, String> inherited) throws IOException {
+            boolean evenOdd = evenAndOddHeaders();
+            StringBuilder ctrls = new StringBuilder();
+            for (String what : new String[]{"header", "footer"}) {
+                Map<String, String> parts = headerFooterParts(sectPr, what);
+                boolean even = parts.containsKey("even") || inherited.containsKey(what + ":even");
+                Map<String, String> changed = new HashMap<String, String>();
+                for (Map.Entry<String, String> e : parts.entrySet()) {
+                    if (!e.getValue().equals(inherited.put(what + ":" + e.getKey(), e.getValue()))) {
+                        changed.put(e.getKey(), e.getValue());
+                    }
+                }
+                if (changed.containsKey("default")) {
+                    ctrls.append(headerFooter(what, evenOdd && even ? "ODD" : "BOTH", changed.get("default")));
+                }
+                if (evenOdd && changed.containsKey("even")) {
+                    ctrls.append(headerFooter(what, "EVEN", changed.get("even")));
+                }
+            }
+            return ctrls.length() == 0 ? "" : "<hp:run charPrIDRef=\"0\">" + ctrls + "</hp:run>";
+        }
+
+        /**
+         * '이어서' 구역 나누기이고 용지·여백·쪽 번호가 앞 구역과 같으면 true.
+         * 머리말·꼬리말이 달라도 같은 구역으로 이어 붙이고 바뀐 것만 그 문단에 둠 ({@link #headerFooterChange}).
          */
         boolean continuesOnSamePage(Element prev, Element cur, Map<String, String> inherited) {
             if (prev == null || cur == null || !"continuous".equals(attr(child(cur, "type"), "val"))) {
@@ -1088,23 +1145,56 @@ public final class DocxToHwpx implements Converter {
                     "top", "bottom", "left", "right", "header", "footer", "gutter")) {
                 return false;
             }
+            return attr(child(cur, "pgNumType"), "start") == null && child(cur, "titlePg") == null;
+        }
+
+        /**
+         * '다음 쪽' 구역 나누기에서 종류·머리말·꼬리말·단 말고는 구역 설정이 앞 구역과 똑같으면 true.
+         * 쪽 번호 새로 시작·첫 쪽 다르게가 있으면 한컴에서도 구역을 나눠야 하므로 false.
+         */
+        boolean onlyNewPage(Element prev, Element cur) {
+            if (prev == null || cur == null) {
+                return false;
+            }
+            String type = attr(child(cur, "type"), "val");
+            if (type != null && !"nextPage".equals(type)) {
+                return false;
+            }
             if (attr(child(cur, "pgNumType"), "start") != null || child(cur, "titlePg") != null) {
                 return false;
             }
-            for (Node n = cur.getFirstChild(); n != null; n = n.getNextSibling()) {
-                String local = n instanceof Element ? n.getLocalName() : null;
-                if ("headerReference".equals(local) || "footerReference".equals(local)) {
-                    Element ref = (Element) n;
-                    String what = local.startsWith("header") ? "header" : "footer";
-                    String type = attr(ref, "type") == null ? "default" : attr(ref, "type");
-                    DocxPackage.Rel rel = rels.get(ref.getAttributeNS(NS_R, "id"));
-                    String target = rel == null ? null : rel.target;
-                    if (target == null || !target.equals(inherited.get(what + ":" + type))) {
-                        return false;
-                    }
+            return settings(prev).equals(settings(cur));
+        }
+
+        private static final Set<String> NOT_COMPARED = new HashSet<String>(Arrays.asList(
+                "type", "headerReference", "footerReference", "cols"));
+
+        // 비교할 구역 설정: 요소 이름과 속성(이름순)을 이어 붙인 글
+        private static String settings(Element sectPr) {
+            StringBuilder b = new StringBuilder();
+            for (Node n = sectPr.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (n instanceof Element && !NOT_COMPARED.contains(n.getLocalName())) {
+                    canonical((Element) n, b);
                 }
             }
-            return true;
+            return b.toString();
+        }
+
+        private static void canonical(Element e, StringBuilder b) {
+            b.append('<').append(e.getLocalName());
+            TreeMap<String, String> attrs = new TreeMap<String, String>();
+            NamedNodeMap m = e.getAttributes();
+            for (int i = 0; i < m.getLength(); i++) {
+                attrs.put(m.item(i).getLocalName() == null ? m.item(i).getNodeName() : m.item(i).getLocalName(),
+                        m.item(i).getNodeValue());
+            }
+            b.append(attrs).append('>');
+            for (Node n = e.getFirstChild(); n != null; n = n.getNextSibling()) {
+                if (n instanceof Element) {
+                    canonical((Element) n, b);
+                }
+            }
+            b.append("</>");
         }
 
         private static boolean sameAttrs(Element a, Element b, String... names) {

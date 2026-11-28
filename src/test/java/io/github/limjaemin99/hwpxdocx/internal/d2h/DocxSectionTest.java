@@ -144,7 +144,8 @@ class DocxSectionTest {
                 .headerFooter("rId20", "header1.xml", "hdr", p("", r("", t("홀수"))))
                 .headerFooter("rId21", "header2.xml", "hdr", p("", r("", t("짝수"))))
                 .headerFooter("rId22", "header3.xml", "hdr", p("", r("", t("제2장"))))
-                .bodyWithSection(sect("<w:headerReference w:type=\"default\" r:id=\"rId22\"/>" + PORTRAIT),
+                // 둘째 구역은 용지가 달라 한컴에서도 구역이 나뉨
+                .bodyWithSection(sect("<w:headerReference w:type=\"default\" r:id=\"rId22\"/>" + LANDSCAPE),
                         p(sect("<w:headerReference w:type=\"default\" r:id=\"rId20\"/>"
                                 + "<w:headerReference w:type=\"even\" r:id=\"rId21\"/>" + PORTRAIT), r("", t("제1조"))),
                         p("", r("", t("제10조"))))
@@ -159,12 +160,45 @@ class DocxSectionTest {
         convert(new TestDocx()
                 .headerFooter("rId20", "header1.xml", "hdr", p("", r("", t("제1장 총강"))))
                 .headerFooter("rId21", "header2.xml", "hdr", p("", r("", t("제2장 국민의 권리와 의무"))))
-                .bodyWithSection(sect("<w:headerReference w:type=\"default\" r:id=\"rId21\"/>" + PORTRAIT),
+                .bodyWithSection(sect("<w:headerReference w:type=\"default\" r:id=\"rId21\"/>" + LANDSCAPE),
                         p(sect("<w:headerReference w:type=\"default\" r:id=\"rId20\"/>" + PORTRAIT), r("", t("제1조"))),
                         p("", r("", t("제10조"))))
                 .toBytes());
         assertEquals("제1장 총강", text(first(section(0), "header")));
         assertEquals("제2장 국민의 권리와 의무", text(first(section(1), "header")));
+    }
+
+    /** 쪽 설정이 같은 '다음 쪽' 구역 나누기: 한 구역 안 쪽 나눔 + 그 문단의 머리말 (짝수 머리말이 이어지면 홀수 쪽에만). */
+    @Test
+    void nextPageBreakWithSamePageBecomesPageBreak() throws Exception {
+        convert(new TestDocx().evenAndOddHeaders()
+                .headerFooter("rId20", "header1.xml", "hdr", p("", r("", t("홀수"))))
+                .headerFooter("rId21", "header2.xml", "hdr", p("", r("", t("짝수"))))
+                .headerFooter("rId22", "header3.xml", "hdr", p("", r("", t("제2장"))))
+                .bodyWithSection(sect("<w:headerReference w:type=\"default\" r:id=\"rId22\"/>" + PORTRAIT),
+                        p(sect("<w:headerReference w:type=\"default\" r:id=\"rId20\"/>"
+                                + "<w:headerReference w:type=\"even\" r:id=\"rId21\"/>" + PORTRAIT), r("", t("제1조"))),
+                        p("", r("", t("제10조"))))
+                .toBytes());
+        assertEquals(null, hwpx.get("Contents/section1.xml"));
+        NodeList headers = section(0).getElementsByTagNameNS(HP, "header");
+        assertEquals(3, headers.getLength());
+        Element changed = (Element) headers.item(2);
+        assertEquals("제2장", text(changed));
+        assertEquals("ODD", changed.getAttribute("applyPageType"));
+        Element para = (Element) changed.getParentNode().getParentNode().getParentNode();
+        assertEquals("1", para.getAttribute("pageBreak"));
+        assertContains(para.getTextContent(), "제10조");
+    }
+
+    @Test
+    void nextPageBreakWithOtherSettingStartsNewSection() throws Exception {
+        convert(new TestDocx()
+                .bodyWithSection(sect(PORTRAIT + "<w:vAlign w:val=\"center\"/>"),
+                        p(sect(PORTRAIT), r("", t("제1조"))),
+                        p("", r("", t("제10조"))))
+                .toBytes());
+        assertTrue(hwpx.get("Contents/section1.xml") != null);
     }
 
     @Test
@@ -213,7 +247,7 @@ class DocxSectionTest {
     }
 
     @Test
-    void continuousBreakWithOwnHeaderStartsNewSection() throws Exception {
+    void continuousBreakWithOwnHeaderPutsHeaderInParagraph() throws Exception {
         convert(new TestDocx()
                 .headerFooter("rId20", "header1.xml", "hdr", p("", r("", t("제1장 총강"))))
                 .headerFooter("rId21", "header2.xml", "hdr", p("", r("", t("제2장 국민의 권리와 의무"))))
@@ -222,7 +256,14 @@ class DocxSectionTest {
                         p(sect("<w:headerReference w:type=\"default\" r:id=\"rId20\"/>" + PORTRAIT), r("", t("제1조"))),
                         p("", r("", t("제10조"))))
                 .toBytes());
-        assertTrue(hwpx.get("Contents/section1.xml") != null);
+        // 구역을 나누지 않고 둘째 Word 구역 첫 문단에 바뀐 머리말을 둠
+        assertEquals(null, hwpx.get("Contents/section1.xml"));
+        NodeList headers = section(0).getElementsByTagNameNS(HP, "header");
+        assertEquals(2, headers.getLength());
+        assertContains(headers.item(1).getTextContent(), "제2장 국민의 권리와 의무");
+        Element secondPara = (Element) headers.item(1).getParentNode().getParentNode().getParentNode();
+        assertContains(secondPara.getTextContent(), "제10조");
+        assertTrue(!result.getWarnings().toString().contains("같은 쪽에서 이어지는 구역 나누기"));
     }
 
     @Test
