@@ -8,7 +8,9 @@ docx/para-format.docx	ok	330	330	10	0	0	0
 docx/table-merge.docx	ok	193	193	19	1	0	0
 hwpx/char-format.hwpx	ok	253	253	8	0	0	0
 hwpx/footnote.hwpx	ok	142	145	7	0	0	0
+hwpx/header-change.hwpx	ok	197	197	10	0	0	0
 hwpx/header-footer.hwpx	ok	359	362	13	0	0	0
+hwpx/kept-equation.hwpx	ok	76	76	5	0	0	1
 hwpx/multi-section.hwpx	ok	374	374	14	0	0	0
 hwpx/numbering.hwpx	ok	104	104	8	0	0	0
 hwpx/para-format.hwpx	ok	284	284	8	0	0	0

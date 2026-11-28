@@ -1172,21 +1172,38 @@ public final class DocxToHwpx implements Converter {
             if (attr(child(cur, "pgNumType"), "start") != null || child(cur, "titlePg") != null) {
                 return false;
             }
-            return settings(prev).equals(settings(cur));
+            Map<String, String> a = settings(prev);
+            Map<String, String> b = settings(cur);
+            Set<String> names = new HashSet<String>(a.keySet());
+            names.addAll(b.keySet());
+            for (String name : names) {
+                // 구역에 각주·미주 설정이 없으면 문서 설정을 씀. 한쪽에만 적혀 있으면 다르다고 보지 않음
+                boolean optional = "footnotePr".equals(name) || "endnotePr".equals(name);
+                if (optional && (a.get(name) == null || b.get(name) == null)) {
+                    continue;
+                }
+                if (a.get(name) == null ? b.get(name) != null : !a.get(name).equals(b.get(name))) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static final Set<String> NOT_COMPARED = new HashSet<String>(Arrays.asList(
                 "type", "headerReference", "footerReference", "cols"));
 
-        // 비교할 구역 설정: 요소 이름과 속성(이름순)을 이어 붙인 글
-        private static String settings(Element sectPr) {
-            StringBuilder b = new StringBuilder();
+        // 비교할 구역 설정: 요소 이름 → 그 요소와 속성(이름순)·하위 요소를 이어 붙인 글
+        private static Map<String, String> settings(Element sectPr) {
+            Map<String, String> m = new HashMap<String, String>();
             for (Node n = sectPr.getFirstChild(); n != null; n = n.getNextSibling()) {
                 if (n instanceof Element && !NOT_COMPARED.contains(n.getLocalName())) {
+                    StringBuilder b = new StringBuilder();
                     canonical((Element) n, b);
+                    String prev = m.get(n.getLocalName());
+                    m.put(n.getLocalName(), prev == null ? b.toString() : prev + b);
                 }
             }
-            return b.toString();
+            return m;
         }
 
         private static void canonical(Element e, StringBuilder b) {
