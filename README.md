@@ -144,6 +144,8 @@ sha256sum -c hwpx-docx-converter-<버전>.jar.sha256
 | `multi-section.hwpx` | 구역 3개: 세로 용지, 가로 용지, 2단 |
 | `numbering.hwpx` | 문단 번호, 글머리표 |
 | `footnote.hwpx` | 각주 2개, 미주 1개 |
+| `header-change.hwpx` | 구역 하나 안에서 둘째 쪽 첫 문단에 새 머리말 (왕복 시험에서 구역이 늘지 않는지) |
+| `kept-equation.hwpx` | DOCX로 옮기지 못하는 수식이 든 문단 (왕복 시험에서 원본 문단이 되살아나는지) |
 
 공개 시험 문서 (`src/test/resources/docs/docx/`, LibreOffice 26.2.7.3으로 `tools/docgen/`의 원본에서 만듦):
 
