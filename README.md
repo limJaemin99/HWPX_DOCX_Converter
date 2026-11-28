@@ -140,6 +140,18 @@ sha256sum -c hwpx-docx-converter-<버전>.jar.sha256
 | `numbering.hwpx` | 문단 번호, 글머리표 |
 | `footnote.hwpx` | 각주 2개, 미주 1개 |
 
+공개 시험 문서 (`src/test/resources/docs/docx/`, LibreOffice 26.2.7.3으로 `tools/docgen/`의 원본에서 만듦):
+
+| 파일 | 보는 기능 |
+|---|---|
+| `char-format.docx` | 굵게·기울임·밑줄·글자 색·크기·글꼴·취소선·형광펜 |
+| `para-format.docx` | 제목 1·2 스타일, 가운데·오른쪽·양쪽 정렬, 들여쓰기·내어쓰기, 줄 간격 160%·고정, 문단 위·아래 간격, 오른쪽 여백 |
+| `table-merge.docx` | 표 하나, 세로 셀 합치기 2곳, 가로 셀 합치기 1곳, 머리 행 음영·굵은 아래 테두리, 셀 음영 |
+| `header-footer.docx` | 머리말, 첫 쪽 머리말 따로, 꼬리말 쪽 번호, 쪽 나누기 |
+| `multi-section.docx` | 구역 4개: 세로 용지, 2단(이어서), 가로 용지, 세로 용지 |
+| `numbering.docx` | 3단계 번호 목록, 글머리표, 앞 목록에 이어지는 번호, 1부터 다시 시작 |
+| `footnote.docx` | 각주 2개, 미주 1개 |
+
 ### DOCX 규격 검사
 
 CI의 `docx-validate` 작업이 결과 DOCX를 [Open XML SDK](https://github.com/dotnet/Open-XML-SDK)의 `OpenXmlValidator`로 검사합니다. 오류가 하나라도 있으면 실패하고, 오류 목록(파트, 위치, 설명)은 작업 요약에 남습니다.
@@ -183,7 +195,7 @@ Word 배수 줄 간격은 글꼴의 한 줄 높이 기준이라, 글꼴마다 "�
 - 공개 시험 문서의 문장은 법제처 국가법령정보센터(https://www.law.go.kr)에 공개된 「대한민국헌법」 조문입니다. 법령은 저작권법 제7조에 따라 보호받지 않는 저작물입니다
 - 표 칸 제목·머리말·꼬리말·각주 문장 일부는 시험용으로 새로 쓴 것입니다
 - 문서 저장 정보(작성자·마지막 저장한 사람)는 비웠습니다
-- DOCX 시험 문서는 `tools/docgen/`의 원본(Flat ODT, `.fodt`)을 LibreOffice로 변환해 만듭니다. 수동 실행 워크플로(`시험 문서 만들기 (LibreOffice DOCX)`)로 한 번 만들어 저장소에 고정하고, CI는 고정된 파일을 씁니다
+- DOCX 시험 문서는 `tools/docgen/`의 원본(Flat ODT, `.fodt`)을 LibreOffice로 변환해 만듭니다. 수동 실행 워크플로(`시험 문서 만들기 (LibreOffice DOCX)`)로 한 번 만들어 저장소에 고정하고, CI는 고정된 파일을 씁니다. 지금 파일은 LibreOffice 26.2.7.3(Ubuntu)으로 만들었습니다
 
 ## 라이선스
 
